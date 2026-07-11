@@ -29,6 +29,7 @@ export default function Attendance() {
   
   // Decide active tab based on role
   const isManager = isSuperAdmin || isAdmin || isSubAdmin;
+
   const [activeTab, setActiveTab] = useState<'clock' | 'daily' | 'monthly' | 'rules' | 'requests' | 'holidays' | 'my-requests'>(
     isManager ? 'daily' : 'clock'
   );
@@ -45,8 +46,21 @@ export default function Attendance() {
   const [rules, setRules] = useState<AttendanceRules>({
     shiftStart: '09:00',
     shiftEnd: '18:00',
-    gracePeriodMins: 15
+    gracePeriodMins: 15,
+    allowSubadminHoliday: false,
+    allowSubadminModify: false
   });
+
+  const canAssignHolidays = (isSuperAdmin || isAdmin) || (isSubAdmin && !!rules.allowSubadminHoliday);
+
+  const canModifyUserAttendance = (targetRole: string) => {
+    if (isSuperAdmin) return true;
+    if (isAdmin) return targetRole !== 'super_admin';
+    if (isSubAdmin) {
+      return !!rules.allowSubadminModify && targetRole !== 'admin' && targetRole !== 'super_admin';
+    }
+    return false;
+  };
 
   // Admin View States
   const [dailyRecords, setDailyRecords] = useState<AttendanceRecord[]>([]);
@@ -244,6 +258,10 @@ export default function Attendance() {
   // Admin Add Holiday
   const handleAddHoliday = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canAssignHolidays) {
+      alert('You do not have permission to assign holidays.');
+      return;
+    }
     if (!holidayDate || !holidayName) {
       alert('Please fill out all fields.');
       return;
@@ -269,6 +287,10 @@ export default function Attendance() {
 
   // Admin Delete Holiday
   const handleDeleteHoliday = async (id: number) => {
+    if (!canAssignHolidays) {
+      alert('You do not have permission to delete holidays.');
+      return;
+    }
     if (!confirm('Are you sure you want to delete this holiday?')) return;
     try {
       setSaving(true);
@@ -459,6 +481,11 @@ export default function Attendance() {
     const userObj = allUsers.find(u => u.id === userId);
     if (!userObj) return;
 
+    if (!canModifyUserAttendance(userObj.role || 'employee')) {
+      alert("You do not have permission to modify this user's attendance.");
+      return;
+    }
+
     try {
       setSaving(true);
       let inTime = existing?.checkInTime || null;
@@ -555,6 +582,9 @@ export default function Attendance() {
         
         // Filter by branch
         if (activeBranchId !== 0 && user.branchId !== activeBranchId) continue;
+
+        // Check permission
+        if (!canModifyUserAttendance(user.role || 'employee')) continue;
 
         // Skip if already marked
         const alreadyMarked = dailyRecords.find(r => r.userId === user.id && r.status);
@@ -746,6 +776,26 @@ export default function Attendance() {
 
           {isManager && (
             <>
+              {isSubAdmin && (
+                <>
+                  <button
+                    onClick={() => setActiveTab('clock')}
+                    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-all duration-200 ${
+                      activeTab === 'clock' ? 'bg-white text-slate-900 shadow-md shadow-slate-200' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Clock className="w-4 h-4" /> My Clock
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('my-requests')}
+                    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-all duration-200 ${
+                      activeTab === 'my-requests' ? 'bg-white text-slate-900 shadow-md shadow-slate-200' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4" /> Apply Leave/Permission
+                  </button>
+                </>
+              )}
               <button
                 onClick={() => setActiveTab('daily')}
                 className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-all duration-200 ${
@@ -1022,6 +1072,7 @@ export default function Attendance() {
                             {(['present', 'absent', 'half_day', 'leave'] as const).map((st) => (
                               <button
                                 key={st}
+                                disabled={!canModifyUserAttendance(item.role || 'employee')}
                                 onClick={() => handleDailyStatusChange(item.userId, st)}
                                 className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg transition-all ${
                                   item.status === st 
@@ -1029,7 +1080,7 @@ export default function Attendance() {
                                        st === 'absent' ? 'bg-rose-600 text-white shadow' :
                                        st === 'half_day' ? 'bg-amber-500 text-white shadow' :
                                        'bg-purple-600 text-white shadow')
-                                    : 'text-slate-500 hover:text-slate-950'
+                                    : 'text-slate-555 hover:text-slate-950'
                                 }`}
                               >
                                 {st === 'present' ? 'P' : st === 'absent' ? 'A' : st === 'half_day' ? 'HD' : 'L'}
@@ -1046,12 +1097,21 @@ export default function Attendance() {
                         </td>
                         
                         <td className="px-6 py-4 text-right">
-                          <button
-                            onClick={() => openCellDetail(item.name || '', selectedDate, dailyRecords.find(r => r.userId === item.userId))}
-                            className="text-xs font-semibold text-primary-600 hover:underline"
-                          >
-                            Edit Log
-                          </button>
+                          {canModifyUserAttendance(item.role || 'employee') ? (
+                            <button
+                              onClick={() => openCellDetail(item.name || '', selectedDate, dailyRecords.find(r => r.userId === item.userId))}
+                              className="text-xs font-semibold text-primary-600 hover:underline"
+                            >
+                              Edit Log
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => openCellDetail(item.name || '', selectedDate, dailyRecords.find(r => r.userId === item.userId))}
+                              className="text-xs font-semibold text-slate-400 hover:underline"
+                            >
+                              View Details
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -1259,6 +1319,40 @@ export default function Attendance() {
                 <span className="text-xs text-slate-400 mt-1 block">Maximum minutes past shift start before check-in is flagged late.</span>
               </div>
 
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100 mt-2">
+                <div>
+                  <label className="text-sm font-semibold text-slate-900">Allow Sub-Admins to Assign Holidays</label>
+                  <p className="text-xs text-slate-500">Toggle whether Sub-Admins have permission to create and delete holidays.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRules({ ...rules, allowSubadminHoliday: !rules.allowSubadminHoliday })}
+                  style={{ backgroundColor: rules.allowSubadminHoliday ? 'var(--primary)' : '#cbd5e1' }}
+                  className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${rules.allowSubadminHoliday ? 'translate-x-6' : 'translate-x-1'}`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100 mt-2">
+                <div>
+                  <label className="text-sm font-semibold text-slate-900">Allow Sub-Admins to Edit Attendance Logs</label>
+                  <p className="text-xs text-slate-500">Toggle whether Sub-Admins have permission to modify daily and monthly logs for others.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRules({ ...rules, allowSubadminModify: !rules.allowSubadminModify })}
+                  style={{ backgroundColor: rules.allowSubadminModify ? 'var(--primary)' : '#cbd5e1' }}
+                  className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${rules.allowSubadminModify ? 'translate-x-6' : 'translate-x-1'}`}
+                  />
+                </button>
+              </div>
+
               <button
                 type="submit"
                 disabled={saving}
@@ -1391,8 +1485,8 @@ export default function Attendance() {
         {/* Tab 6: Holiday Assigner / Viewer */}
         {activeTab === 'holidays' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Holiday Assigner Form (Admin only) */}
-            {isManager && (
+            {/* Holiday Assigner Form (Admin or Allowed Sub-Admin) */}
+            {canAssignHolidays && (
               <div className="lg:col-span-1 card border border-white/60 bg-white/85 shadow-soft p-6 h-fit">
                 <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
                   <PlusCircle className="w-5 h-5 text-primary-500" /> Assign Holiday
@@ -1445,7 +1539,7 @@ export default function Attendance() {
             )}
 
             {/* Holidays List */}
-            <div className={`${isManager ? 'lg:col-span-2' : 'lg:col-span-3'} card border border-white/60 bg-white/85 shadow-soft p-6`}>
+            <div className={`${canAssignHolidays ? 'lg:col-span-2' : 'lg:col-span-3'} card border border-white/60 bg-white/85 shadow-soft p-6`}>
               <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
                 <CalendarRange className="w-5 h-5 text-primary-500" /> Holidays List
               </h2>
@@ -1461,7 +1555,7 @@ export default function Attendance() {
                         <th className="px-6 py-3">Date</th>
                         <th className="px-6 py-3">Holiday Occasion</th>
                         <th className="px-6 py-3">Applicable Branch</th>
-                        {isManager && <th className="px-6 py-3 text-right">Action</th>}
+                        {canAssignHolidays && <th className="px-6 py-3 text-right">Action</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -1478,9 +1572,9 @@ export default function Attendance() {
                               {h.branchId ? `Branch ${h.branchId}` : 'All Branches'}
                             </span>
                           </td>
-                          {isManager && (
+                          {canAssignHolidays && (
                             <td className="px-6 py-3.5 text-right">
-                              {(isSuperAdmin || isAdmin) && h.id && (
+                              {h.id && (
                                 <button
                                   onClick={() => handleDeleteHoliday(h.id!)}
                                   disabled={saving}
@@ -1507,7 +1601,7 @@ export default function Attendance() {
         )}
 
         {/* Tab 7: Employee Leave/Permission Application and History */}
-        {activeTab === 'my-requests' && !isManager && currentUser && (
+        {activeTab === 'my-requests' && currentUser && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Request Form (Left Column) */}
             <div className="lg:col-span-1 card border border-white/60 bg-white/85 shadow-soft p-6 h-fit">
@@ -1719,83 +1813,96 @@ export default function Attendance() {
               User: <span className="font-semibold text-slate-800">{activeCellDetail.userName}</span> | Date: <span className="font-semibold text-slate-800">{activeCellDetail.date}</span>
             </p>
 
-            <div className="space-y-4">
-              
-              {/* Status Segment Options */}
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Status</label>
-                <div className="grid grid-cols-4 gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
-                  {(['present', 'absent', 'half_day', 'leave'] as const).map((st) => (
+            {(() => {
+              const targetUserRole = activeCellDetail ? allUsers.find(u => u.name === activeCellDetail.userName)?.role : null;
+              const canEditActiveCell = activeCellDetail ? canModifyUserAttendance(targetUserRole || 'employee') : false;
+
+              return (
+                <div className="space-y-4">
+                  
+                  {/* Status Segment Options */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Status</label>
+                    <div className="grid grid-cols-4 gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
+                      {(['present', 'absent', 'half_day', 'leave'] as const).map((st) => (
+                        <button
+                          key={st}
+                          type="button"
+                          disabled={!canEditActiveCell}
+                          onClick={() => setCellEditStatus(st)}
+                          className={`text-xs font-semibold py-2 rounded-xl transition-all ${
+                            cellEditStatus === st 
+                              ? 'bg-slate-900 text-white shadow' 
+                              : 'text-slate-505 hover:text-slate-900'
+                          }`}
+                        >
+                          <span className="capitalize">{st.replace('_', ' ')}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Conditional Timing Inputs (only shown for Present / Half day) */}
+                  {(cellEditStatus === 'present' || cellEditStatus === 'half_day') && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Check-In</label>
+                        <input 
+                          type="time" 
+                          disabled={!canEditActiveCell}
+                          value={cellEditInTime} 
+                          onChange={(e) => setCellEditInTime(e.target.value)} 
+                          className="input w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Check-Out</label>
+                        <input 
+                          type="time" 
+                          disabled={!canEditActiveCell}
+                          value={cellEditOutTime} 
+                          onChange={(e) => setCellEditOutTime(e.target.value)} 
+                          className="input w-full"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Notes Input */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Notes</label>
+                    <textarea 
+                      disabled={!canEditActiveCell}
+                      value={cellEditNotes} 
+                      onChange={(e) => setCellEditNotes(e.target.value)} 
+                      className="input w-full h-20 py-2 resize-none" 
+                      placeholder={canEditActiveCell ? "e.g. Late due to traffic, sick leave, etc." : "No notes added"}
+                    />
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
                     <button
-                      key={st}
                       type="button"
-                      onClick={() => setCellEditStatus(st)}
-                      className={`text-xs font-semibold py-2 rounded-xl transition-all ${
-                        cellEditStatus === st 
-                          ? 'bg-slate-900 text-white shadow' 
-                          : 'text-slate-505 hover:text-slate-900'
-                      }`}
+                      onClick={() => setActiveCellDetail(null)}
+                      className="btn-secondary flex-1 py-3 rounded-2xl font-bold"
                     >
-                      <span className="capitalize">{st.replace('_', ' ')}</span>
+                      {canEditActiveCell ? 'Cancel' : 'Close'}
                     </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Conditional Timing Inputs (only shown for Present / Half day) */}
-              {(cellEditStatus === 'present' || cellEditStatus === 'half_day') && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Check-In</label>
-                    <input 
-                      type="time" 
-                      value={cellEditInTime} 
-                      onChange={(e) => setCellEditInTime(e.target.value)} 
-                      className="input w-full"
-                    />
+                    {canEditActiveCell && (
+                      <button
+                        type="button"
+                        onClick={handleDetailSave}
+                        disabled={saving}
+                        className="btn-primary flex-1 py-3 rounded-2xl font-bold"
+                      >
+                        Save Log
+                      </button>
+                    )}
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Check-Out</label>
-                    <input 
-                      type="time" 
-                      value={cellEditOutTime} 
-                      onChange={(e) => setCellEditOutTime(e.target.value)} 
-                      className="input w-full"
-                    />
-                  </div>
+
                 </div>
-              )}
-
-              {/* Notes Input */}
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Notes</label>
-                <textarea 
-                  value={cellEditNotes} 
-                  onChange={(e) => setCellEditNotes(e.target.value)} 
-                  className="input w-full h-20 py-2 resize-none" 
-                  placeholder="e.g. Late due to traffic, sick leave, etc."
-                />
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveCellDetail(null)}
-                  className="btn-secondary flex-1 py-3 rounded-2xl font-bold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDetailSave}
-                  disabled={saving}
-                  className="btn-primary flex-1 py-3 rounded-2xl font-bold"
-                >
-                  Save Log
-                </button>
-              </div>
-
-            </div>
+              );
+            })()}
           </div>
         </div>
       )}

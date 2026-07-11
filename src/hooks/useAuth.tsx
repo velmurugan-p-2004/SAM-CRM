@@ -78,13 +78,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
     try {
+      let perms: string[] = [];
       const userPerms = await db.getUserPermissions(user.username, activeBranchId);
       if (userPerms && userPerms.length > 0) {
-        setAllowedPages(userPerms);
-        return;
+        perms = userPerms;
+      } else {
+        const rolePerms = await db.getRolePermissions(user.role, activeBranchId);
+        perms = rolePerms || [];
       }
-      const rolePerms = await db.getRolePermissions(user.role, activeBranchId);
-      setAllowedPages(rolePerms || []);
+      
+      // By default, subadmin must always have access to the attendance page
+      if (user.role === 'sub_admin' && !perms.includes('attendance')) {
+        perms = [...perms, 'attendance'];
+      }
+      
+      setAllowedPages(perms);
     } catch (e) {
       console.error('Failed to load role/user permissions:', e);
       // Fallback default employee pages if DB fetch fails

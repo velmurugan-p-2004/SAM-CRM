@@ -239,6 +239,8 @@ export interface AttendanceRules {
   shiftStart: string; // HH:MM
   shiftEnd: string; // HH:MM
   gracePeriodMins: number;
+  allowSubadminHoliday?: boolean | number;
+  allowSubadminModify?: boolean | number;
   updatedAt?: string;
 }
 

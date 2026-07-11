@@ -1298,7 +1298,8 @@ const Settings: React.FC = () => {
                 { id: 'reports', label: 'Sales Reports' },
                 { id: 'templates', label: 'INV Templates' },
                 { id: 'online_orders', label: 'Online Orders' },
-                { id: 'settings', label: 'Settings Panel' }
+                { id: 'settings', label: 'Settings Panel' },
+                { id: 'attendance', label: 'Attendance' }
               ].map(page => (
                 <label key={page.id} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-200 hover:bg-slate-100/70 transition-colors cursor-pointer select-none">
                   <input

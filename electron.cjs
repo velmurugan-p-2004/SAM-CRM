@@ -263,9 +263,22 @@ async function initDb() {
       shiftStart VARCHAR(10) NOT NULL DEFAULT '09:00',
       shiftEnd VARCHAR(10) NOT NULL DEFAULT '18:00',
       gracePeriodMins INT NOT NULL DEFAULT 15,
+      allowSubadminHoliday TINYINT NOT NULL DEFAULT 0,
+      allowSubadminModify TINYINT NOT NULL DEFAULT 0,
       updatedAt VARCHAR(255)
     )
   `);
+
+  try {
+    await pool.query('ALTER TABLE AttendanceRules ADD COLUMN allowSubadminHoliday TINYINT NOT NULL DEFAULT 0');
+  } catch (err) {
+    // Ignore duplicate column error
+  }
+  try {
+    await pool.query('ALTER TABLE AttendanceRules ADD COLUMN allowSubadminModify TINYINT NOT NULL DEFAULT 0');
+  } catch (err) {
+    // Ignore duplicate column error
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS Holidays (
@@ -1126,14 +1139,16 @@ async function _executeDbCallInner(method, args) {
       const [rules] = args;
       const now = new Date().toISOString();
       const [res] = await pool.query(
-        `INSERT INTO AttendanceRules (id, shiftStart, shiftEnd, gracePeriodMins, updatedAt)
-         VALUES (1, ?, ?, ?, ?)
+        `INSERT INTO AttendanceRules (id, shiftStart, shiftEnd, gracePeriodMins, allowSubadminHoliday, allowSubadminModify, updatedAt)
+         VALUES (1, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
            shiftStart = VALUES(shiftStart),
            shiftEnd = VALUES(shiftEnd),
            gracePeriodMins = VALUES(gracePeriodMins),
+           allowSubadminHoliday = VALUES(allowSubadminHoliday),
+           allowSubadminModify = VALUES(allowSubadminModify),
            updatedAt = VALUES(updatedAt)`,
-        [rules.shiftStart || '09:00', rules.shiftEnd || '18:00', rules.gracePeriodMins ?? 15, now]
+        [rules.shiftStart || '09:00', rules.shiftEnd || '18:00', rules.gracePeriodMins ?? 15, rules.allowSubadminHoliday ? 1 : 0, rules.allowSubadminModify ? 1 : 0, now]
       );
       return true;
     }
