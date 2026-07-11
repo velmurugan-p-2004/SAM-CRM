@@ -242,6 +242,65 @@ async function initDb() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS Attendance (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      userId INT NOT NULL,
+      date VARCHAR(10) NOT NULL,
+      status VARCHAR(50) NOT NULL,
+      checkInTime VARCHAR(255) NULL,
+      checkOutTime VARCHAR(255) NULL,
+      notes TEXT NULL,
+      branchId INT NULL DEFAULT 1,
+      createdAt VARCHAR(255),
+      updatedAt VARCHAR(255),
+      UNIQUE KEY uq_user_date (userId, date)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS AttendanceRules (
+      id INT PRIMARY KEY DEFAULT 1,
+      shiftStart VARCHAR(10) NOT NULL DEFAULT '09:00',
+      shiftEnd VARCHAR(10) NOT NULL DEFAULT '18:00',
+      gracePeriodMins INT NOT NULL DEFAULT 15,
+      updatedAt VARCHAR(255)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS Holidays (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      date VARCHAR(10) NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      branchId INT NULL,
+      createdAt VARCHAR(255),
+      updatedAt VARCHAR(255),
+      UNIQUE KEY uq_holiday_date_branch (date, branchId)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS LeavePermissionRequests (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      userId INT NOT NULL,
+      requestType VARCHAR(50) NOT NULL,
+      leaveType VARCHAR(50) NULL,
+      startDate VARCHAR(10) NOT NULL,
+      endDate VARCHAR(10) NOT NULL,
+      startTime VARCHAR(5) NULL,
+      endTime VARCHAR(5) NULL,
+      durationHours DECIMAL(4,2) NULL,
+      reason TEXT NOT NULL,
+      status VARCHAR(50) NOT NULL DEFAULT 'pending',
+      approvedBy INT NULL,
+      rejectReason TEXT NULL,
+      branchId INT NULL DEFAULT 1,
+      createdAt VARCHAR(255),
+      updatedAt VARCHAR(255)
+    )
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS Branches (
       id INT AUTO_INCREMENT PRIMARY KEY,
       name VARCHAR(255) NOT NULL,
@@ -423,6 +482,7 @@ async function initDb() {
        ('employee', 'reports'),
        ('employee', 'templates'),
        ('employee', 'settings'),
+       ('employee', 'attendance'),
        ('sub_admin', 'dashboard'),
        ('sub_admin', 'billing'),
        ('sub_admin', 'products'),
@@ -437,7 +497,8 @@ async function initDb() {
        ('sub_admin', 'parties'),
        ('sub_admin', 'reports'),
        ('sub_admin', 'templates'),
-       ('sub_admin', 'settings')`
+       ('sub_admin', 'settings'),
+       ('sub_admin', 'attendance')`
     );
     console.log('Seeded default employee and sub_admin permissions.');
   } else {
@@ -457,11 +518,28 @@ async function initDb() {
          ('sub_admin', 'settings'),
          ('employee', 'inventory'),
          ('employee', 'parties'),
+         ('employee', 'attendance'),
+         ('sub_admin', 'attendance'),
          ('employee', 'reports')`
       );
     } catch (e) {
       console.error('Failed to auto-seed role permissions for all pages:', e);
     }
+  }
+
+  // Seed default attendance rules if empty
+  try {
+    const [rulesCountRows] = await pool.query('SELECT COUNT(*) as count FROM AttendanceRules');
+    if (rulesCountRows[0].count === 0) {
+      const now = new Date().toISOString();
+      await pool.query(
+        `INSERT INTO AttendanceRules (id, shiftStart, shiftEnd, gracePeriodMins, updatedAt) VALUES (1, '09:00', '18:00', 15, ?)`,
+        [now]
+      );
+      console.log('Seeded default attendance rules.');
+    }
+  } catch (err) {
+    console.error('Failed to seed default attendance rules:', err);
   }
 
   console.log('Database tables successfully verified/created.');
@@ -981,6 +1059,230 @@ async function _executeDbCallInner(method, args) {
       const [id] = args;
       const [res] = await pool.query('DELETE FROM Products WHERE id = ?', [id]);
       return res.affectedRows > 0;
+    }
+
+    case 'getAttendance': {
+      const [date, branchId] = args;
+      const targetBranch = branchId || 1;
+      const query = `
+        SELECT u.id as userId, u.username, u.name, u.role, u.branchId,
+               a.id as attendanceId, a.date, a.status, a.checkInTime, a.checkOutTime, a.notes
+        FROM Users u
+        LEFT JOIN Attendance a ON u.id = a.userId AND a.date = ?
+        WHERE (u.branchId = ? OR u.branchId IS NULL OR ? = 0) AND u.role != 'super_admin'
+        ORDER BY u.name ASC
+      `;
+      const [rows] = await pool.query(query, [date, targetBranch, targetBranch]);
+      return rows;
+    }
+    case 'saveAttendance': {
+      const [record] = args;
+      const now = new Date().toISOString();
+      const [res] = await pool.query(
+        `INSERT INTO Attendance (userId, date, status, checkInTime, checkOutTime, notes, branchId, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           status = VALUES(status),
+           checkInTime = VALUES(checkInTime),
+           checkOutTime = VALUES(checkOutTime),
+           notes = VALUES(notes),
+           updatedAt = VALUES(updatedAt)`,
+        [
+          record.userId,
+          record.date,
+          record.status,
+          record.checkInTime || null,
+          record.checkOutTime || null,
+          record.notes || null,
+          record.branchId || 1,
+          now,
+          now
+        ]
+      );
+      return res.insertId || true;
+    }
+    case 'getAttendanceReport': {
+      const [month, year, branchId] = args;
+      const targetBranch = branchId || 1;
+      const query = `
+        SELECT a.id, a.userId, a.date, a.status, a.checkInTime, a.checkOutTime, a.notes,
+               u.name, u.role, u.username
+        FROM Attendance a
+        JOIN Users u ON a.userId = u.id
+        WHERE a.date LIKE ? AND (a.branchId = ? OR a.branchId IS NULL OR ? = 0)
+        ORDER BY a.date ASC, u.name ASC
+      `;
+      const [rows] = await pool.query(query, [`${year}-${String(month).padStart(2, '0')}%`, targetBranch, targetBranch]);
+      return rows;
+    }
+    case 'getAttendanceRules': {
+      const [rows] = await pool.query('SELECT * FROM AttendanceRules WHERE id = 1');
+      if (rows.length === 0) {
+        return { shiftStart: '09:00', shiftEnd: '18:00', gracePeriodMins: 15 };
+      }
+      return rows[0];
+    }
+    case 'saveAttendanceRules': {
+      const [rules] = args;
+      const now = new Date().toISOString();
+      const [res] = await pool.query(
+        `INSERT INTO AttendanceRules (id, shiftStart, shiftEnd, gracePeriodMins, updatedAt)
+         VALUES (1, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           shiftStart = VALUES(shiftStart),
+           shiftEnd = VALUES(shiftEnd),
+           gracePeriodMins = VALUES(gracePeriodMins),
+           updatedAt = VALUES(updatedAt)`,
+        [rules.shiftStart || '09:00', rules.shiftEnd || '18:00', rules.gracePeriodMins ?? 15, now]
+      );
+      return true;
+    }
+    case 'getMyAttendanceHistory': {
+      const [userId, month, year] = args;
+      const query = `
+        SELECT * FROM Attendance
+        WHERE userId = ? AND date LIKE ?
+        ORDER BY date ASC
+      `;
+      const [rows] = await pool.query(query, [userId, `${year}-${String(month).padStart(2, '0')}%`]);
+      return rows;
+    }
+
+    case 'getHolidays': {
+      const [branchId] = args;
+      const [rows] = (branchId === 0)
+        ? await pool.query('SELECT * FROM Holidays ORDER BY date ASC')
+        : await pool.query('SELECT * FROM Holidays WHERE branchId = ? OR branchId IS NULL ORDER BY date ASC', [branchId || 1]);
+      return rows;
+    }
+    case 'saveHoliday': {
+      const [holiday] = args;
+      const now = new Date().toISOString();
+      const [res] = await pool.query(
+        `INSERT INTO Holidays (date, name, branchId, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           name = VALUES(name),
+           updatedAt = VALUES(updatedAt)`,
+        [
+          holiday.date,
+          holiday.name,
+          holiday.branchId || null,
+          now,
+          now
+        ]
+      );
+      return res.insertId || true;
+    }
+    case 'deleteHoliday': {
+      const [id] = args;
+      const [res] = await pool.query('DELETE FROM Holidays WHERE id = ?', [id]);
+      return res.affectedRows > 0;
+    }
+    case 'getLeaveRequests': {
+      const [branchId, userId] = args;
+      let query = `
+        SELECT l.*, u.name as employeeName, u.role as employeeRole
+        FROM LeavePermissionRequests l
+        JOIN Users u ON l.userId = u.id
+      `;
+      const params = [];
+      const conditions = [];
+      if (userId) {
+        conditions.push('l.userId = ?');
+        params.push(userId);
+      }
+      if (branchId && branchId !== 0) {
+        conditions.push('(l.branchId = ? OR l.branchId IS NULL)');
+        params.push(branchId);
+      }
+      if (conditions.length > 0) {
+        query += ' WHERE ' + conditions.join(' AND ');
+      }
+      query += ' ORDER BY l.id DESC';
+      const [rows] = await pool.query(query, params);
+      return rows;
+    }
+    case 'saveLeaveRequest': {
+      const [request] = args;
+      const now = new Date().toISOString();
+      const [res] = await pool.query(
+        `INSERT INTO LeavePermissionRequests (userId, requestType, leaveType, startDate, endDate, startTime, endTime, durationHours, reason, status, approvedBy, rejectReason, branchId, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          request.userId,
+          request.requestType,
+          request.leaveType || null,
+          request.startDate,
+          request.endDate,
+          request.startTime || null,
+          request.endTime || null,
+          request.durationHours || null,
+          request.reason,
+          request.status || 'pending',
+          request.approvedBy || null,
+          request.rejectReason || null,
+          request.branchId || null,
+          now,
+          now
+        ]
+      );
+      return res.insertId;
+    }
+    case 'updateLeaveRequestStatus': {
+      const [id, status, approvedBy, rejectReason] = args;
+      const now = new Date().toISOString();
+      
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        
+        await conn.query(
+          `UPDATE LeavePermissionRequests 
+           SET status = ?, approvedBy = ?, rejectReason = ?, updatedAt = ?
+           WHERE id = ?`,
+          [status, approvedBy, rejectReason || null, now, id]
+        );
+        
+        if (status === 'approved') {
+          // Fetch the request details to check if it's a leave
+          const [requests] = await conn.query('SELECT * FROM LeavePermissionRequests WHERE id = ?', [id]);
+          if (requests.length > 0) {
+            const req = requests[0];
+            if (req.requestType === 'leave') {
+              // Generate dates list
+              const dates = [];
+              let current = new Date(req.startDate);
+              const end = new Date(req.endDate);
+              while (current <= end) {
+                dates.push(current.toISOString().split('T')[0]);
+                current.setDate(current.getDate() + 1);
+              }
+              
+              // Insert/update Attendance records as 'leave'
+              for (const d of dates) {
+                await conn.query(
+                  `INSERT INTO Attendance (userId, date, status, notes, branchId, createdAt, updatedAt)
+                   VALUES (?, ?, 'leave', 'Approved Leave Request', ?, ?, ?)
+                   ON DUPLICATE KEY UPDATE
+                     status = 'leave',
+                     notes = 'Approved Leave Request',
+                     updatedAt = ?`,
+                  [req.userId, d, req.branchId || 1, now, now, now]
+                );
+              }
+            }
+          }
+        }
+        
+        await conn.commit();
+        return true;
+      } catch (err) {
+        await conn.rollback();
+        throw err;
+      } finally {
+        conn.release();
+      }
     }
 
     case 'getCategories': {

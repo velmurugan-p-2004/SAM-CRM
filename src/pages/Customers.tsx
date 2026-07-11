@@ -19,7 +19,7 @@ import {
 import { Customer } from '../types';
 import { useCustomers, useBills } from '../hooks/useDatabase';
 
-type Page = 'dashboard' | 'products' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'reports' | 'settings' | 'services' | 'service_bill';
+type Page = 'dashboard' | 'products' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'reports' | 'settings' | 'services' | 'service_bill' | 'attendance';
 
 interface CustomersProps {
   onNavigate: (page: Page) => void;

@@ -15,10 +15,11 @@ import {
   Wrench,
   FileText,
   Bike,
+  CalendarCheck,
   X
 } from 'lucide-react';
 
-type Page = 'dashboard' | 'services' | 'service_bill' | 'products' | 'categories' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'parties' | 'reports' | 'templates' | 'settings' | 'online_orders' | 'sale_bike';
+type Page = 'dashboard' | 'services' | 'service_bill' | 'products' | 'categories' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'parties' | 'reports' | 'templates' | 'settings' | 'online_orders' | 'sale_bike' | 'attendance';
 
 interface SidebarProps {
   currentPage: string;
@@ -42,7 +43,9 @@ const menuItems = [
   { id: 'reports', label: 'Reports', icon: BarChart3 },
   { id: 'templates', label: 'INV Template', icon: Layout },
   { id: 'online_orders', label: 'Online Orders', icon: Package },
+  { id: 'attendance', label: 'Attendance', icon: CalendarCheck },
 ];
+
 
 const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, onClose }) => {
   const { currentUser, logout, allowedPages, branches, activeBranchId, setActiveBranchId, isSuperAdmin, isAdmin } = useAuth();

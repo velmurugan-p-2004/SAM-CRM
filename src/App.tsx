@@ -19,9 +19,10 @@ import { useDatabase } from './hooks/useDatabase';
 import { useAuth, AuthProvider } from './hooks/useAuth';
 import { useECommerceIntegration } from './hooks/useECommerceIntegration';
 import Login from './pages/Login';
+import Attendance from './pages/Attendance';
 import { Database, FileText, FileCode, FolderDown, Menu } from 'lucide-react';
 
-type Page = 'dashboard' | 'services' | 'service_bill' | 'products' | 'categories' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'parties' | 'reports' | 'templates' | 'settings' | 'online_orders' | 'sale_bike';
+type Page = 'dashboard' | 'services' | 'service_bill' | 'products' | 'categories' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'parties' | 'reports' | 'templates' | 'settings' | 'online_orders' | 'sale_bike' | 'attendance';
 
 function AppContent() {
   const { currentUser, allowedPages } = useAuth();
@@ -149,6 +150,8 @@ function AppContent() {
         return <SaleBike />;
       case 'settings':
         return <Settings />;
+      case 'attendance':
+        return <Attendance />;
       default:
         return <Dashboard onNavigate={setCurrentPage} />;
     }

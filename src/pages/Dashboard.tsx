@@ -21,7 +21,7 @@ import {
   generateRegularA4DetailedReceipt,
 } from '../utils/templateGenerator';
 
-type Page = 'dashboard' | 'products' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'reports' | 'settings';
+type Page = 'dashboard' | 'products' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'reports' | 'settings' | 'attendance';
 
 interface DashboardProps {
   onNavigate: (page: Page) => void;

@@ -36,7 +36,8 @@ const ALL_PAGES = [
   'templates',
   'online_orders',
   'settings',
-  'sale_bike'
+  'sale_bike',
+  'attendance'
 ];
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -87,7 +88,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {
       console.error('Failed to load role/user permissions:', e);
       // Fallback default employee pages if DB fetch fails
-      setAllowedPages(['dashboard', 'billing', 'products', 'customers', 'online_orders', 'barcodes']);
+      setAllowedPages(['dashboard', 'billing', 'products', 'customers', 'online_orders', 'barcodes', 'attendance']);
     }
   };
 

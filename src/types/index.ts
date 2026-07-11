@@ -213,3 +213,64 @@ export interface BikeServiceReminder {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface Attendance {
+  id?: number;
+  userId: number;
+  date: string; // YYYY-MM-DD
+  status: 'present' | 'absent' | 'half_day' | 'leave';
+  checkInTime?: string | null;
+  checkOutTime?: string | null;
+  notes?: string | null;
+  branchId?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AttendanceRecord extends Attendance {
+  attendanceId?: number;
+  name?: string;
+  role?: string;
+  username?: string;
+}
+
+export interface AttendanceRules {
+  id?: number;
+  shiftStart: string; // HH:MM
+  shiftEnd: string; // HH:MM
+  gracePeriodMins: number;
+  updatedAt?: string;
+}
+
+export interface Holiday {
+  id?: number;
+  date: string; // YYYY-MM-DD
+  name: string;
+  branchId?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface LeavePermissionRequest {
+  id?: number;
+  userId: number;
+  requestType: 'leave' | 'permission';
+  leaveType?: 'sick' | 'casual' | 'other' | null;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  startTime?: string | null; // HH:MM (for permission)
+  endTime?: string | null; // HH:MM (for permission)
+  durationHours?: number | null;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  approvedBy?: number | null;
+  rejectReason?: string | null;
+  branchId?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+  // Join fields
+  employeeName?: string;
+  employeeRole?: string;
+}
+
+

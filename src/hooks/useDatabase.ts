@@ -265,7 +265,57 @@ class BrowserDatabase {
   async deleteBikeServiceReminder(id: number): Promise<boolean> {
     return await this.getElectronApi().dbCall('deleteBikeServiceReminder', id);
   }
+
+  async getAttendance(date: string, branchId?: number): Promise<any[]> {
+    return await this.getElectronApi().dbCall('getAttendance', date, branchId);
+  }
+
+  async saveAttendance(record: any): Promise<any> {
+    return await this.getElectronApi().dbCall('saveAttendance', record);
+  }
+
+  async getAttendanceReport(month: number, year: number, branchId?: number): Promise<any[]> {
+    return await this.getElectronApi().dbCall('getAttendanceReport', month, year, branchId);
+  }
+
+  async getAttendanceRules(): Promise<any> {
+    return await this.getElectronApi().dbCall('getAttendanceRules');
+  }
+
+  async saveAttendanceRules(rules: any): Promise<any> {
+    return await this.getElectronApi().dbCall('saveAttendanceRules', rules);
+  }
+
+  async getMyAttendanceHistory(userId: number, month: number, year: number): Promise<any[]> {
+    return await this.getElectronApi().dbCall('getMyAttendanceHistory', userId, month, year);
+  }
+
+  async getHolidays(branchId?: number): Promise<any[]> {
+    return await this.getElectronApi().dbCall('getHolidays', branchId);
+  }
+
+  async saveHoliday(holiday: any): Promise<any> {
+    return await this.getElectronApi().dbCall('saveHoliday', holiday);
+  }
+
+  async deleteHoliday(id: number): Promise<boolean> {
+    return await this.getElectronApi().dbCall('deleteHoliday', id);
+  }
+
+  async getLeaveRequests(branchId?: number, userId?: number): Promise<any[]> {
+    return await this.getElectronApi().dbCall('getLeaveRequests', branchId, userId);
+  }
+
+  async saveLeaveRequest(request: any): Promise<any> {
+    return await this.getElectronApi().dbCall('saveLeaveRequest', request);
+  }
+
+  async updateLeaveRequestStatus(id: number, status: string, approvedBy: number, rejectReason?: string): Promise<boolean> {
+    return await this.getElectronApi().dbCall('updateLeaveRequestStatus', id, status, approvedBy, rejectReason);
+  }
+
 }
+
 
 // Global database instance
 const browserDb = new BrowserDatabase();
