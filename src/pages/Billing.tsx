@@ -10,8 +10,8 @@ import {
   Clock,
   RotateCcw
 } from 'lucide-react';
-import { Product, Customer, Bill, BillItem } from '../types';
-import { useProducts, useCustomers, useBills } from '../hooks/useDatabase';
+import { Product, Customer, Bill, BillItem, Service } from '../types';
+import { useProducts, useCustomers, useBills, useServices } from '../hooks/useDatabase';
 import {
   generateQRData,
   generateThermalCompactReceipt,
@@ -29,6 +29,7 @@ interface BillItemWithProduct extends BillItem {
 const Billing: React.FC = () => {
   const [billItems, setBillItems] = useState<BillItemWithProduct[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [loadedServiceId, setLoadedServiceId] = useState<number | null>(null);
   const [walkInName, setWalkInName] = useState('');
   const [walkInPhone, setWalkInPhone] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
@@ -67,6 +68,7 @@ const Billing: React.FC = () => {
 
   const { customers, updateCustomer } = useCustomers();
   const { addBill, updateBill, getBillsByCustomer } = useBills();
+  const { services, updateService } = useServices();
 
   useEffect(() => {
     const raw = localStorage.getItem('billing_edit_bill');
@@ -161,6 +163,7 @@ const Billing: React.FC = () => {
       };
 
       setBillItems([serviceItem]);
+      setLoadedServiceId(data.serviceId);
       localStorage.removeItem('billing_import_service');
       alert(`Imported Service Card #${data.serviceId} details!`);
     } catch (e) {
@@ -168,6 +171,48 @@ const Billing: React.FC = () => {
       localStorage.removeItem('billing_import_service');
     }
   }, [products, customers]);
+
+  const handleLoadServiceIntoBill = async (srv: Service) => {
+    try {
+      const dummyServiceProduct: Product = {
+        id: -999,
+        name: `Service: ${srv.description || 'Vehicle Repair'}`,
+        company: srv.vehicleName ? `${srv.vehicleName} (${srv.vehicleNumber})` : 'General Service',
+        count: 1,
+        costPrice: 0,
+        sellingPrice: srv.estimatedCost || 0,
+        discount: 0,
+        gst: 18,
+        barcode: 'SERVICE_CUSTOM',
+        finalPrice: srv.estimatedCost || 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      const serviceItem: BillItemWithProduct = {
+        id: Date.now(),
+        billId: 0,
+        productId: -999,
+        quantity: 1,
+        unitPrice: srv.estimatedCost || 0,
+        discount: 0,
+        gst: 18,
+        totalPrice: srv.estimatedCost || 0,
+        product: dummyServiceProduct
+      };
+
+      setBillItems(prev => {
+        const filtered = prev.filter(item => item.productId !== -999);
+        return [...filtered, serviceItem];
+      });
+
+      setLoadedServiceId(srv.id);
+      alert(`Loaded Service Ticket SRV-${srv.id} details for vehicle ${srv.vehicleNumber} into current bill.`);
+    } catch (e) {
+      console.error('Failed to load service into bill:', e);
+      alert('Failed to load service details.');
+    }
+  };
 
   const refreshCustomerPurchaseStats = async (customerId: number) => {
     const bills = getBillsByCustomer(customerId);
@@ -597,6 +642,12 @@ const Billing: React.FC = () => {
       }
 
       printReceipt(tempBill);
+ 
+      // Auto-complete the associated workshop service card status in the database
+      if (loadedServiceId) {
+        await updateService(loadedServiceId, { status: 'completed' });
+        setLoadedServiceId(null);
+      }
 
       // Clear bill after successful checkout
       setBillItems([]);
@@ -699,7 +750,7 @@ const Billing: React.FC = () => {
             </div>
 
             {selectedCustomer ? (
-              <div className="rounded-xl bg-gradient-to-br from-primary-50 to-slate-50 p-2 ring-1 ring-primary-100">
+              <div className="rounded-xl bg-gradient-to-br from-primary-50 to-slate-50 p-3 ring-1 ring-primary-100">
                 <div className="font-medium text-sm text-slate-900">{selectedCustomer.name}</div>
                 <div className="text-xs text-slate-600">{selectedCustomer.phone}</div>
                 {selectedCustomer.email && (
@@ -711,6 +762,36 @@ const Billing: React.FC = () => {
                     <span>
                       {selectedCustomer.vehicleName || 'Vehicle'}: {selectedCustomer.vehicleNumber || 'N/A'}
                     </span>
+                  </div>
+                )}
+
+                {/* Show completed service tickets for this customer */}
+                {services.filter(s => s.customerId === selectedCustomer.id && s.status === 'completed').length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-slate-200/60">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Unbilled Workshop Services</p>
+                    <div className="space-y-1.5">
+                      {services
+                        .filter(s => s.customerId === selectedCustomer.id && s.status === 'completed')
+                        .map(srv => (
+                          <button
+                            key={srv.id}
+                            onClick={() => handleLoadServiceIntoBill(srv)}
+                            className="w-full text-left bg-indigo-50/50 border border-indigo-100/60 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all p-2 rounded-xl text-xs flex justify-between items-center group font-medium"
+                          >
+                            <div className="truncate pr-1">
+                              <span className="font-bold text-slate-800 group-hover:text-white block text-[11px] truncate">
+                                🚗 {srv.vehicleName || 'Vehicle'}
+                              </span>
+                              <span className="text-slate-400 group-hover:text-indigo-200 text-[10px] font-mono">
+                                ({srv.vehicleNumber})
+                              </span>
+                            </div>
+                            <span className="flex-shrink-0 bg-white text-indigo-700 font-extrabold px-2 py-1 rounded-lg border border-indigo-200 transition-all">
+                              ₹{srv.estimatedCost.toFixed(2)}
+                            </span>
+                          </button>
+                        ))}
+                    </div>
                   </div>
                 )}
               </div>

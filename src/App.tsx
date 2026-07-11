@@ -13,13 +13,14 @@ import InvoiceTemplates from './pages/InvoiceTemplates';
 import Settings from './pages/Settings';
 import OnlineOrders from './pages/OnlineOrders';
 import Services from './pages/Services';
+import ServiceBill from './pages/ServiceBill';
 import { useDatabase } from './hooks/useDatabase';
 import { useAuth, AuthProvider } from './hooks/useAuth';
 import { useECommerceIntegration } from './hooks/useECommerceIntegration';
 import Login from './pages/Login';
 import { Database, FileText, FileCode, FolderDown } from 'lucide-react';
 
-type Page = 'dashboard' | 'services' | 'products' | 'categories' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'parties' | 'reports' | 'templates' | 'settings' | 'online_orders';
+type Page = 'dashboard' | 'services' | 'service_bill' | 'products' | 'categories' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'parties' | 'reports' | 'templates' | 'settings' | 'online_orders';
 
 function AppContent() {
   const { currentUser, allowedPages } = useAuth();
@@ -128,6 +129,8 @@ function AppContent() {
         return <Billing />;
       case 'services':
         return <Services />;
+      case 'service_bill':
+        return <ServiceBill />;
       case 'customers':
         return <Customers onNavigate={setCurrentPage} />;
       case 'inventory':

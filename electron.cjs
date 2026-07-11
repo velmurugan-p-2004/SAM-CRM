@@ -8,7 +8,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const express = require('express');
 const cors = require('cors');
-const isDev = process.env.NODE_ENV === 'development';
+const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 const mysql = require('mysql2/promise');
 const crypto = require('crypto');
@@ -327,6 +327,7 @@ async function initDb() {
        ('employee', 'online_orders'),
        ('employee', 'barcodes'),
        ('employee', 'services'),
+       ('employee', 'service_bill'),
        ('sub_admin', 'dashboard'),
        ('sub_admin', 'billing'),
        ('sub_admin', 'products'),
@@ -336,9 +337,21 @@ async function initDb() {
        ('sub_admin', 'inventory'),
        ('sub_admin', 'parties'),
        ('sub_admin', 'reports'),
-       ('sub_admin', 'services')`
+       ('sub_admin', 'services'),
+       ('sub_admin', 'service_bill')`
     );
     console.log('Seeded default employee and sub_admin permissions.');
+  } else {
+    // Make sure new page is added to existing databases
+    try {
+      await pool.query(
+        `INSERT IGNORE INTO RolePermissions (role, pageId) VALUES 
+         ('employee', 'service_bill'),
+         ('sub_admin', 'service_bill')`
+      );
+    } catch (e) {
+      console.error('Failed to auto-seed role permissions for service_bill:', e);
+    }
   }
 
   console.log('Database tables successfully verified/created.');

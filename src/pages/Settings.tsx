@@ -1186,6 +1186,8 @@ const Settings: React.FC = () => {
               {[
                 { id: 'dashboard', label: 'Dashboard' },
                 { id: 'billing', label: 'New Bill' },
+                { id: 'services', label: 'Service Tickets' },
+                { id: 'service_bill', label: 'Service Billing' },
                 { id: 'products', label: 'Products Catalog' },
                 { id: 'categories', label: 'Categories' },
                 { id: 'barcodes', label: 'Barcodes Manager' },

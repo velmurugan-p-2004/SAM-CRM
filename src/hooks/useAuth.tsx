@@ -25,6 +25,7 @@ const ALL_PAGES = [
   'dashboard',
   'billing',
   'services',
+  'service_bill',
   'products',
   'categories',
   'barcodes',
