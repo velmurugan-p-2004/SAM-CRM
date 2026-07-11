@@ -122,8 +122,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, onCl
           currentUser?.branchId && (
             <div className="mt-4 rounded-xl bg-white/5 border border-white/5 p-2 px-3 flex items-center justify-between text-xs text-slate-300">
               <span className="font-semibold uppercase tracking-wider text-[10px] text-slate-400">Branch:</span>
-              <span className="font-semibold text-white truncate max-w-[140px]" title={branches.find(b => b.id === currentUser.branchId)?.name || 'Loading...'}>
-                {branches.find(b => b.id === currentUser.branchId)?.name || 'Loading...'}
+              <span className="font-semibold text-white truncate max-w-[140px]" title={branches.find(b => b.id == currentUser.branchId)?.name || 'Loading...'}>
+                {branches.find(b => b.id == currentUser.branchId)?.name || 'Loading...'}
               </span>
             </div>
           )

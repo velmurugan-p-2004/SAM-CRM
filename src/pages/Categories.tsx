@@ -12,9 +12,13 @@ import {
 } from 'lucide-react';
 import { useCategories } from '../hooks/useDatabase';
 import { Category } from '../types';
+import { useAuth } from '../hooks/useAuth';
 
 const Categories: React.FC = () => {
   const { categories, loading, error, addCategory, updateCategory, deleteCategory, refreshCategories } = useCategories();
+  const { branches } = useAuth();
+  const defaultBranches = branches.map(b => b.name).join(',');
+
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -24,8 +28,18 @@ const Categories: React.FC = () => {
     name: '',
     description: '',
     customizationEnabled: false,
-    returnWindowDays: '' as string | number
+    returnWindowDays: '' as string | number,
+    allowedBranches: ''
   });
+
+  React.useEffect(() => {
+    if (branches.length > 0 && !formData.allowedBranches && !editingCategory) {
+      setFormData(prev => ({
+        ...prev,
+        allowedBranches: defaultBranches
+      }));
+    }
+  }, [branches]);
 
   const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({
@@ -38,11 +52,16 @@ const Categories: React.FC = () => {
     e.preventDefault();
 
     try {
+      const parsedDays = formData.returnWindowDays !== '' && formData.returnWindowDays !== null && formData.returnWindowDays !== undefined
+        ? parseInt(String(formData.returnWindowDays))
+        : undefined;
+
       const categoryData = {
         name: formData.name,
         description: formData.description,
         customizationEnabled: formData.customizationEnabled,
-        returnWindowDays: formData.returnWindowDays !== '' ? parseInt(String(formData.returnWindowDays)) : undefined
+        returnWindowDays: parsedDays !== undefined && !isNaN(parsedDays) ? parsedDays : undefined,
+        allowedBranches: formData.allowedBranches
       };
 
       if (editingCategory) {
@@ -64,7 +83,8 @@ const Categories: React.FC = () => {
       name: '',
       description: '',
       customizationEnabled: false,
-      returnWindowDays: ''
+      returnWindowDays: '',
+      allowedBranches: defaultBranches
     });
     setShowAddForm(false);
     setEditingCategory(null);
@@ -75,7 +95,8 @@ const Categories: React.FC = () => {
       name: category.name,
       description: category.description || '',
       customizationEnabled: category.customizationEnabled || false,
-      returnWindowDays: category.returnWindowDays !== undefined ? category.returnWindowDays : ''
+      returnWindowDays: (category.returnWindowDays !== undefined && category.returnWindowDays !== null) ? category.returnWindowDays : '',
+      allowedBranches: category.allowedBranches || defaultBranches
     });
     setEditingCategory(category);
     setShowAddForm(true);
@@ -247,6 +268,7 @@ const Categories: React.FC = () => {
                 />
               </div>
 
+
               <div className="flex gap-3 pt-4">
                 <button
                   type="submit"
@@ -294,6 +316,7 @@ const Categories: React.FC = () => {
                   <th className="px-6 py-3 text-left font-semibold text-slate-700">Description</th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-700">Customization</th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-700">Return Window</th>
+                  <th className="px-6 py-3 text-left font-semibold text-slate-700">Branch Access</th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-700">Sync Status</th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-700">Actions</th>
                 </tr>
@@ -315,6 +338,19 @@ const Categories: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-slate-700 font-medium">
                       {category.returnWindowDays !== undefined ? `${category.returnWindowDays} Days` : 'N/A'}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-wrap gap-1 max-w-[150px]">
+                        {(category.allowedBranches || defaultBranches)
+                          .split(',')
+                          .map(b => b.trim())
+                          .filter(Boolean)
+                          .map(branchName => (
+                            <span key={branchName} className="badge bg-blue-50 text-blue-700 text-[10px] py-0.5 px-1.5 rounded-full border border-blue-100">
+                              {branchName}
+                            </span>
+                          ))}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600">

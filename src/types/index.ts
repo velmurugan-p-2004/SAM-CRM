@@ -25,6 +25,7 @@ export interface Category {
   description?: string;
   customizationEnabled?: boolean;
   returnWindowDays?: number;
+  allowedBranches?: string; // Comma-separated branch names
   createdAt: string;
   updatedAt: string;
 }

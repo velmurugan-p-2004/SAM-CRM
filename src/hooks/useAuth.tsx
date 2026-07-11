@@ -122,6 +122,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [currentUser, activeBranchId]);
 
+  useEffect(() => {
+    const refreshCurrentUser = async () => {
+      if (currentUser) {
+        try {
+          const list = await db.getUsers();
+          const latest = list.find(u => u.username === currentUser.username);
+          if (latest) {
+            const updatedUser = {
+              ...currentUser,
+              name: latest.name,
+              role: latest.role,
+              branchId: latest.branchId
+            };
+            if (
+              currentUser.name !== latest.name ||
+              currentUser.role !== latest.role ||
+              currentUser.branchId !== latest.branchId
+            ) {
+              setCurrentUser(updatedUser);
+              sessionStorage.setItem('billing_app_current_user', JSON.stringify(updatedUser));
+              if (latest.branchId) {
+                setActiveBranchIdState(latest.branchId);
+              }
+              window.dispatchEvent(new Event('branch-changed'));
+            }
+          }
+        } catch (e) {
+          console.error('Failed to auto-refresh current user session:', e);
+        }
+      }
+    };
+    refreshCurrentUser();
+  }, [currentUser?.username]);
+
   const login = async (username: string, password: string) => {
     try {
       setLoading(true);

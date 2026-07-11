@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Download, Save, Database, Upload, Users, UserPlus, Edit, Trash2, Building2 } from 'lucide-react';
-import { useProducts, useCustomers, useBills, useTransactions, useDatabase } from '../hooks/useDatabase';
+import { useProducts, useCustomers, useBills, useTransactions, useDatabase, useCategories } from '../hooks/useDatabase';
 import { useAuth } from '../hooks/useAuth';
 
 const Settings: React.FC = () => {
@@ -44,6 +44,72 @@ const Settings: React.FC = () => {
   });
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [showUserForm, setShowUserForm] = useState(false);
+
+  const { categories, updateCategory } = useCategories(0); // Pass 0 to fetch all categories unfiltered
+  const [selectedSettingBranch, setSelectedSettingBranch] = useState<string>('');
+  const [branchCategoriesMap, setBranchCategoriesMap] = useState<Record<number, boolean>>({});
+
+  useEffect(() => {
+    if (branches.length > 0 && !selectedSettingBranch) {
+      setSelectedSettingBranch(branches[0].name);
+    }
+  }, [branches]);
+
+  useEffect(() => {
+    if (selectedSettingBranch) {
+      const map: Record<number, boolean> = {};
+      categories.forEach(c => {
+        const allowed = (c.allowedBranches || '')
+          .split(',')
+          .map(b => b.trim().toLowerCase());
+        map[c.id] = allowed.includes(selectedSettingBranch.trim().toLowerCase());
+      });
+      setBranchCategoriesMap(map);
+    }
+  }, [selectedSettingBranch, categories]);
+
+  const handleBranchCategoryToggle = (categoryId: number) => {
+    setBranchCategoriesMap(prev => ({
+      ...prev,
+      [categoryId]: !prev[categoryId]
+    }));
+  };
+
+  const saveBranchCategoryAccess = async () => {
+    try {
+      if (!selectedSettingBranch) {
+        alert('Please select a branch first.');
+        return;
+      }
+
+      for (const category of categories) {
+        const isAllowedForSelected = !!branchCategoriesMap[category.id];
+        const currentBranches = (category.allowedBranches || '')
+          .split(',')
+          .map(b => b.trim())
+          .filter(Boolean);
+
+        let updatedBranches;
+        const exists = currentBranches.some(b => b.toLowerCase() === selectedSettingBranch.toLowerCase());
+
+        if (isAllowedForSelected && !exists) {
+          updatedBranches = [...currentBranches, selectedSettingBranch];
+        } else if (!isAllowedForSelected && exists) {
+          updatedBranches = currentBranches.filter(b => b.toLowerCase() !== selectedSettingBranch.toLowerCase());
+        } else {
+          continue; // No change needed
+        }
+
+        await updateCategory(category.id, {
+          allowedBranches: updatedBranches.join(',')
+        });
+      }
+      alert('Branch-based category access settings saved successfully!');
+    } catch (e) {
+      console.error('Failed to save branch category settings:', e);
+      alert('Failed to save settings. Please try again.');
+    }
+  };
 
   const loadUsers = async () => {
     try {
@@ -1158,7 +1224,7 @@ const Settings: React.FC = () => {
                             </span>
                           </td>
                           <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 font-medium">
-                            {u.branchId ? (branches.find(b => b.id === u.branchId)?.name || `Branch #${u.branchId}`) : 'All Branches'}
+                            {u.branchId ? (branches.find(b => b.id == u.branchId)?.name || `Branch #${u.branchId}`) : 'All Branches'}
                           </td>
                           <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-500">
                             {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A'}
@@ -1321,6 +1387,62 @@ const Settings: React.FC = () => {
               <Save className="h-4 w-4" />
               {savePermsLoading ? 'Saving...' : 'Save Authorized Access Levels'}
             </button>
+          </div>
+        )}
+
+        {(isSuperAdmin || isAdmin || isSubAdmin) && (
+          <div className="card border border-white/60 bg-white/85 shadow-soft lg:col-span-2">
+            <div className="flex items-center gap-3 mb-4">
+              <Building2 className="h-6 w-6 text-primary-600" />
+              <h2 className="text-xl font-semibold text-slate-900">Branch-Based Category Access Control</h2>
+            </div>
+            <p className="text-sm text-slate-600 mb-6">
+              Configure which product categories are visible in each store branch. Products in unselected categories will be hidden in that branch.
+            </p>
+
+            <div className="max-w-xs mb-6">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Select Store Branch</label>
+              <select
+                value={selectedSettingBranch}
+                onChange={(e) => setSelectedSettingBranch(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-primary-500 cursor-pointer font-bold"
+              >
+                {branches.map(b => (
+                  <option key={b.id} value={b.name}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-6">
+              {categories.length === 0 ? (
+                <p className="text-sm text-slate-500 italic col-span-full">No categories found. Create categories first in the Categories page.</p>
+              ) : (
+                categories.map(category => (
+                  <label key={category.id} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-200 hover:bg-slate-100/70 transition-colors cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!branchCategoriesMap[category.id]}
+                      disabled={!isSuperAdmin && !isAdmin}
+                      onChange={() => (isSuperAdmin || isAdmin) && handleBranchCategoryToggle(category.id)}
+                      className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500 disabled:opacity-60"
+                    />
+                    <span className="text-sm font-semibold text-slate-800">{category.name}</span>
+                  </label>
+                ))
+              )}
+            </div>
+
+            {(isSuperAdmin || isAdmin) && (
+              <button
+                onClick={saveBranchCategoryAccess}
+                className="btn-primary inline-flex items-center gap-2 px-5 py-2"
+              >
+                <Save className="h-4 w-4" />
+                Save Category Access Rules
+              </button>
+            )}
           </div>
         )}
 

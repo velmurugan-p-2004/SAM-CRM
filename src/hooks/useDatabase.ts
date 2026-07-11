@@ -19,7 +19,8 @@ class BrowserDatabase {
       return api;
     }
 
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+    const defaultBackend = `http://${window.location.hostname}:3001`;
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || localStorage.getItem('billing_app_backend_url') || defaultBackend;
 
     // Web Browser Fallback: proxy queries to hosted Express server
     return {
@@ -29,6 +30,8 @@ class BrowserDatabase {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
+              'X-Tunnel-Skip-Anti-Phishing-Threshold': 'true',
+              'ngrok-skip-browser-warning': 'true'
             },
             body: JSON.stringify({ method, args }),
           });
@@ -167,7 +170,11 @@ class BrowserDatabase {
   }
 
   async login(username: string, password: string): Promise<any> {
-    return await this.getElectronApi().dbCall('login', username, password);
+    const res = await this.getElectronApi().dbCall('login', username, password);
+    if (res && res.error) {
+      throw new Error(res.error);
+    }
+    return res;
   }
 
   async getUsers(): Promise<any[]> {
@@ -329,7 +336,8 @@ const getActiveBranchId = () => {
     const savedUser = sessionStorage.getItem('billing_app_current_user');
     if (savedUser) {
       const u = JSON.parse(savedUser);
-      if (u.branchId) return u.branchId;
+      const bId = u.branchId !== undefined ? u.branchId : u.branchid;
+      if (bId) return bId;
     }
     const savedBranch = sessionStorage.getItem('billing_app_active_branch_id');
     return savedBranch ? parseInt(savedBranch) : 1;
@@ -351,8 +359,31 @@ export const useProducts = (branchId?: number) => {
       setLoading(true);
       setError(null);
       await db.waitForInit();
-      const productList = await db.getProducts(getTargetBranchId());
-      setProducts(productList || []);
+      const currentBranchId = getTargetBranchId();
+      const productList = await db.getProducts(currentBranchId);
+      
+      let filteredProducts = productList || [];
+      if (currentBranchId !== 0) {
+        try {
+          const branchesList = await db.getBranches();
+          const activeBranch = (branchesList || []).find(b => Number(b.id) === Number(currentBranchId));
+          if (activeBranch) {
+            const activeBranchName = activeBranch.name.trim().toLowerCase();
+            const categoriesList = await db.getCategories();
+            filteredProducts = (productList || []).filter(p => {
+              if (!p.categoryName) return true;
+              const cat = categoriesList.find(c => c.name.toLowerCase() === p.categoryName.toLowerCase());
+              if (!cat || !cat.allowedBranches) return true;
+              const allowed = cat.allowedBranches.split(',').map((bName: string) => bName.trim().toLowerCase());
+              return allowed.includes(activeBranchName);
+            });
+          }
+        } catch (e) {
+          console.error('Failed to filter products based on branch category access:', e);
+        }
+      }
+
+      setProducts(filteredProducts);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load products');
     } finally {
@@ -430,9 +461,15 @@ export const useProducts = (branchId?: number) => {
       loadProducts();
     };
     window.addEventListener('ecommerce-sync-completed', handleSync);
+    
+    const interval = setInterval(() => {
+      loadProducts();
+    }, 15000);
+
     return () => {
       window.removeEventListener('branch-changed', handleBranchChange);
       window.removeEventListener('ecommerce-sync-completed', handleSync);
+      clearInterval(interval);
     };
   }, [branchId]);
 
@@ -461,8 +498,27 @@ export const useCategories = (branchId?: number) => {
       setLoading(true);
       setError(null);
       await db.waitForInit();
-      const list = await db.getCategories(getTargetBranchId());
-      setCategories(list || []);
+      const currentBranchId = getTargetBranchId();
+      const list = await db.getCategories(currentBranchId);
+      
+      let filteredCategories = list || [];
+      if (currentBranchId !== 0) {
+        try {
+          const branchesList = await db.getBranches();
+          const activeBranch = (branchesList || []).find(b => Number(b.id) === Number(currentBranchId));
+          if (activeBranch) {
+            const activeBranchName = activeBranch.name.trim().toLowerCase();
+            filteredCategories = (list || []).filter(c => {
+              if (!c.allowedBranches) return true;
+              const allowed = c.allowedBranches.split(',').map((bName: string) => bName.trim().toLowerCase());
+              return allowed.includes(activeBranchName);
+            });
+          }
+        } catch (e) {
+          console.error('Failed to filter categories based on branch access:', e);
+        }
+      }
+      setCategories(filteredCategories);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load categories');
     } finally {
@@ -517,9 +573,15 @@ export const useCategories = (branchId?: number) => {
       loadCategories();
     };
     window.addEventListener('ecommerce-sync-completed', handleSync);
+    
+    const interval = setInterval(() => {
+      loadCategories();
+    }, 15000);
+
     return () => {
       window.removeEventListener('branch-changed', handleBranchChange);
       window.removeEventListener('ecommerce-sync-completed', handleSync);
+      clearInterval(interval);
     };
   }, [branchId]);
 
@@ -616,9 +678,15 @@ export const useCustomers = (branchId?: number) => {
       loadCustomers();
     };
     window.addEventListener('ecommerce-sync-completed', handleSync);
+    
+    const interval = setInterval(() => {
+      loadCustomers();
+    }, 15000);
+
     return () => {
       window.removeEventListener('branch-changed', handleBranchChange);
       window.removeEventListener('ecommerce-sync-completed', handleSync);
+      clearInterval(interval);
     };
   }, [branchId]);
 
@@ -780,9 +848,15 @@ export const useBills = (branchId?: number) => {
       loadBills();
     };
     window.addEventListener('ecommerce-sync-completed', handleSync);
+    
+    const interval = setInterval(() => {
+      loadBills();
+    }, 15000);
+
     return () => {
       window.removeEventListener('branch-changed', handleBranchChange);
       window.removeEventListener('ecommerce-sync-completed', handleSync);
+      clearInterval(interval);
     };
   }, [branchId]);
 
