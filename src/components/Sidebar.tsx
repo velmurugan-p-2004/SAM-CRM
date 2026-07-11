@@ -13,10 +13,11 @@ import {
   FolderOpen,
   LogOut,
   Wrench,
-  FileText
+  FileText,
+  Bike
 } from 'lucide-react';
 
-type Page = 'dashboard' | 'services' | 'service_bill' | 'products' | 'categories' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'parties' | 'reports' | 'templates' | 'settings' | 'online_orders';
+type Page = 'dashboard' | 'services' | 'service_bill' | 'products' | 'categories' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'parties' | 'reports' | 'templates' | 'settings' | 'online_orders' | 'sale_bike';
 
 interface SidebarProps {
   currentPage: string;
@@ -28,6 +29,7 @@ const menuItems = [
   { id: 'billing', label: 'New Bill', icon: Receipt },
   { id: 'services', label: 'Services', icon: Wrench },
   { id: 'service_bill', label: 'Service Bill', icon: FileText },
+  { id: 'sale_bike', label: 'Sale Bike', icon: Bike },
   { id: 'products', label: 'Products', icon: Package },
   { id: 'categories', label: 'Categories', icon: FolderOpen },
   { id: 'barcodes', label: 'Barcodes', icon: Barcode },

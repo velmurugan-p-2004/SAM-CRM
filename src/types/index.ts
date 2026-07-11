@@ -174,3 +174,42 @@ export interface Service {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface Bike {
+  id: number;
+  brand: string;
+  modelName: string;
+  chassisNumber: string;
+  engineNumber: string;
+  color?: string;
+  price: number;
+  costPrice: number;
+  sellingPrice: number;
+  discountPrice: number;
+  discountPercentage: number;
+  gstPercentage: number;
+  showGstInBill: boolean;
+  finalPrice: number;
+  status: 'available' | 'sold';
+  soldToCustomerId?: number | null;
+  saleDate?: string | null;
+  branchId?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BikeServiceReminder {
+  id: number;
+  bikeId: number;
+  customerId: number;
+  serviceNo: number;
+  scheduledDays: number;
+  scheduledDate: string;
+  reminderDate: string;
+  actualVisitDate?: string | null;
+  status: 'pending' | 'overdue' | 'completed';
+  notes?: string;
+  branchId?: number;
+  createdAt: string;
+  updatedAt: string;
+}

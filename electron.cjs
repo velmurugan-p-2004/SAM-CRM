@@ -19,6 +19,9 @@ function hashPassword(password) {
 
 let pool;
 
+// Stored so reconnectPool() can rebuild the pool with the same config
+let dbConfig = null;
+
 async function initDb() {
   const config = {
     host: 'mysql-env-wxixfkg1yk.ap-south-1a.lb.nimbuz.tech',
@@ -27,12 +30,13 @@ async function initDb() {
     password: 'visH325',
     waitForConnections: true,
     connectionLimit: 10,
-    maxIdle: 10,
-    idleTimeout: 60000,
+    maxIdle: 5,
+    idleTimeout: 30000,
     queueLimit: 0,
     decimalNumbers: true,
     enableKeepAlive: true,
-    keepAliveInitialDelay: 10000
+    keepAliveInitialDelay: 0,
+    connectTimeout: 10000
   };
 
   let connection;
@@ -55,8 +59,9 @@ async function initDb() {
   await connection.query('CREATE DATABASE IF NOT EXISTS samdb');
   await connection.end();
 
-  // Re-enable database in config and create pool
+  // Store config and create pool
   config.database = 'samdb';
+  dbConfig = config;
   pool = mysql.createPool(config);
 
   // Test pool
@@ -222,7 +227,17 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS RolePermissions (
       role VARCHAR(50) NOT NULL,
       pageId VARCHAR(50) NOT NULL,
-      PRIMARY KEY (role, pageId)
+      branchId INT NOT NULL DEFAULT 1,
+      PRIMARY KEY (role, pageId, branchId)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS UserPermissions (
+      username VARCHAR(255) NOT NULL,
+      pageId VARCHAR(50) NOT NULL,
+      branchId INT NOT NULL DEFAULT 1,
+      PRIMARY KEY (username, pageId, branchId)
     )
   `);
 
@@ -248,6 +263,49 @@ async function initDb() {
       description TEXT,
       estimatedCost DECIMAL(12,2) DEFAULT 0.00,
       status VARCHAR(50) DEFAULT 'pending',
+      branchId INT NULL DEFAULT 1,
+      createdAt VARCHAR(255),
+      updatedAt VARCHAR(255)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS Bikes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      brand VARCHAR(255) NOT NULL,
+      modelName VARCHAR(255) NOT NULL,
+      chassisNumber VARCHAR(255) UNIQUE NOT NULL,
+      engineNumber VARCHAR(255) UNIQUE NOT NULL,
+      color VARCHAR(100),
+      price DECIMAL(12,2) DEFAULT 0.00,
+      costPrice DECIMAL(12,2) DEFAULT 0.00,
+      sellingPrice DECIMAL(12,2) DEFAULT 0.00,
+      discountPrice DECIMAL(12,2) DEFAULT 0.00,
+      discountPercentage DECIMAL(5,2) DEFAULT 0.00,
+      gstPercentage DECIMAL(5,2) DEFAULT 0.00,
+      showGstInBill BOOLEAN DEFAULT TRUE,
+      finalPrice DECIMAL(12,2) DEFAULT 0.00,
+      status VARCHAR(50) DEFAULT 'available',
+      soldToCustomerId INT NULL,
+      saleDate VARCHAR(255) NULL,
+      branchId INT NULL DEFAULT 1,
+      createdAt VARCHAR(255),
+      updatedAt VARCHAR(255)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS BikeServiceReminders (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      bikeId INT NOT NULL,
+      customerId INT NOT NULL,
+      serviceNo INT NOT NULL,
+      scheduledDays INT NOT NULL,
+      scheduledDate VARCHAR(255) NOT NULL,
+      reminderDate VARCHAR(255) NOT NULL,
+      actualVisitDate VARCHAR(255) NULL,
+      status VARCHAR(50) DEFAULT 'pending',
+      notes TEXT,
       branchId INT NULL DEFAULT 1,
       createdAt VARCHAR(255),
       updatedAt VARCHAR(255)
@@ -286,6 +344,36 @@ async function initDb() {
   await addColumnIfNotExists('Customers', 'vehicleName', 'VARCHAR(255) NULL');
   await addColumnIfNotExists('Customers', 'vehicleNumber', 'VARCHAR(50) NULL');
 
+  // Add pricing fields to Bikes table
+  await addColumnIfNotExists('Bikes', 'costPrice', 'DECIMAL(12,2) DEFAULT 0.00');
+  await addColumnIfNotExists('Bikes', 'sellingPrice', 'DECIMAL(12,2) DEFAULT 0.00');
+  await addColumnIfNotExists('Bikes', 'discountPrice', 'DECIMAL(12,2) DEFAULT 0.00');
+  await addColumnIfNotExists('Bikes', 'discountPercentage', 'DECIMAL(5,2) DEFAULT 0.00');
+  await addColumnIfNotExists('Bikes', 'gstPercentage', 'DECIMAL(5,2) DEFAULT 0.00');
+  await addColumnIfNotExists('Bikes', 'showGstInBill', 'BOOLEAN DEFAULT TRUE');
+  await addColumnIfNotExists('Bikes', 'finalPrice', 'DECIMAL(12,2) DEFAULT 0.00');
+
+  // Migrate RolePermissions branchId column & primary key
+  await addColumnIfNotExists('RolePermissions', 'branchId', 'INT NOT NULL DEFAULT 1');
+  try {
+    await pool.query('ALTER TABLE RolePermissions DROP PRIMARY KEY');
+    await pool.query('ALTER TABLE RolePermissions ADD PRIMARY KEY (role, pageId, branchId)');
+  } catch (err) {
+    // Ignore if already migrated
+  }
+
+  // Migrate Categories unique index constraint from global to (name, branchId)
+  try {
+    await pool.query('ALTER TABLE Categories DROP INDEX name');
+  } catch (err) {
+    // Ignore if index doesn't exist
+  }
+  try {
+    await pool.query('ALTER TABLE Categories ADD UNIQUE KEY uq_category_name_branch (name, branchId)');
+  } catch (err) {
+    // Ignore if constraint already exists
+  }
+
   // Seed default branch if empty
   const [branchesCountRows] = await pool.query('SELECT COUNT(*) as count FROM Branches');
   if (branchesCountRows[0].count === 0) {
@@ -323,38 +411,68 @@ async function initDb() {
        ('employee', 'dashboard'),
        ('employee', 'billing'),
        ('employee', 'products'),
+       ('employee', 'categories'),
+       ('employee', 'barcodes'),
        ('employee', 'customers'),
        ('employee', 'online_orders'),
-       ('employee', 'barcodes'),
        ('employee', 'services'),
        ('employee', 'service_bill'),
+       ('employee', 'sale_bike'),
+       ('employee', 'inventory'),
+       ('employee', 'parties'),
+       ('employee', 'reports'),
+       ('employee', 'templates'),
+       ('employee', 'settings'),
        ('sub_admin', 'dashboard'),
        ('sub_admin', 'billing'),
        ('sub_admin', 'products'),
+       ('sub_admin', 'categories'),
+       ('sub_admin', 'barcodes'),
        ('sub_admin', 'customers'),
        ('sub_admin', 'online_orders'),
-       ('sub_admin', 'barcodes'),
+       ('sub_admin', 'services'),
+       ('sub_admin', 'service_bill'),
+       ('sub_admin', 'sale_bike'),
        ('sub_admin', 'inventory'),
        ('sub_admin', 'parties'),
        ('sub_admin', 'reports'),
-       ('sub_admin', 'services'),
-       ('sub_admin', 'service_bill')`
+       ('sub_admin', 'templates'),
+       ('sub_admin', 'settings')`
     );
     console.log('Seeded default employee and sub_admin permissions.');
   } else {
-    // Make sure new page is added to existing databases
+    // Make sure all sidebar pages are added to existing databases
     try {
       await pool.query(
         `INSERT IGNORE INTO RolePermissions (role, pageId) VALUES 
          ('employee', 'service_bill'),
-         ('sub_admin', 'service_bill')`
+         ('sub_admin', 'service_bill'),
+         ('employee', 'sale_bike'),
+         ('sub_admin', 'sale_bike'),
+         ('employee', 'categories'),
+         ('sub_admin', 'categories'),
+         ('employee', 'templates'),
+         ('sub_admin', 'templates'),
+         ('employee', 'settings'),
+         ('sub_admin', 'settings'),
+         ('employee', 'inventory'),
+         ('employee', 'parties'),
+         ('employee', 'reports')`
       );
     } catch (e) {
-      console.error('Failed to auto-seed role permissions for service_bill:', e);
+      console.error('Failed to auto-seed role permissions for all pages:', e);
     }
   }
 
   console.log('Database tables successfully verified/created.');
+
+  // Normalize empty strings to NULL for unique columns to avoid duplicate key errors
+  try {
+    await pool.query("UPDATE Products SET barcode = NULL WHERE barcode = ''");
+    await pool.query("UPDATE Customers SET phone = NULL WHERE phone = ''");
+  } catch (err) {
+    console.error('Failed to normalize unique columns:', err);
+  }
 
   await migrateFromLocalBackup();
 }
@@ -413,7 +531,7 @@ async function migrateFromLocalBackup() {
         `INSERT INTO Products (id, name, company, productCode, count, costPrice, sellingPrice, discount, gst, finalPrice, barcode, createdAt, updatedAt, hsnCode, skuCode, categoryName, images)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE barcode=barcode`,
-        [p.id, p.name, p.company || '', p.productCode || '', p.count || 0, p.costPrice || 0, p.sellingPrice || 0, p.discount || 0, p.gst || 0, p.finalPrice || 0, p.barcode || '', p.createdAt || new Date().toISOString(), p.updatedAt || new Date().toISOString(), p.hsnCode || '', p.skuCode || '', p.categoryName || '', JSON.stringify(p.images || [])]
+        [p.id, p.name, p.company || '', p.productCode || '', p.count || 0, p.costPrice || 0, p.sellingPrice || 0, p.discount || 0, p.gst || 0, p.finalPrice || 0, p.barcode && p.barcode.trim() !== '' ? p.barcode.trim() : null, p.createdAt || new Date().toISOString(), p.updatedAt || new Date().toISOString(), p.hsnCode || '', p.skuCode || '', p.categoryName || '', JSON.stringify(p.images || [])]
       );
     }
     console.log(`Migrated ${products.length} products.`);
@@ -425,7 +543,7 @@ async function migrateFromLocalBackup() {
         `INSERT INTO Customers (id, name, phone, email, address, creditBalance, creditHistory, createdAt, updatedAt, gstNumber, type)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE phone=phone`,
-        [c.id, c.name, c.phone || '', c.email || '', c.address || '', c.creditBalance || 0, JSON.stringify(c.creditHistory || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString(), c.gstNumber || '', c.type || 'standard']
+        [c.id, c.name, c.phone && c.phone.trim() !== '' ? c.phone.trim() : null, c.email || '', c.address || '', c.creditBalance || 0, JSON.stringify(c.creditHistory || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString(), c.gstNumber || '', c.type || 'standard']
       );
     }
     console.log(`Migrated ${customers.length} customers.`);
@@ -727,7 +845,57 @@ apiApp.listen(3001, () => {
   console.log('POS Webhook Listener running on port 3001');
 });
 
+// Rebuild the connection pool after a fatal/timeout error
+async function reconnectPool() {
+  if (!dbConfig) throw new Error('DB config not available for reconnect');
+  console.log('Reconnecting to database pool...');
+  try {
+    await pool.end();
+  } catch (_) { /* ignore errors while closing dead pool */ }
+  pool = mysql.createPool(dbConfig);
+  await pool.query('SELECT 1'); // verify new pool works
+  console.log('Database pool reconnected successfully.');
+}
+
+// Returns true for errors that mean the connection is dead and we should retry
+function isFatalConnectionError(err) {
+  if (err && err.fatal) return true;
+  const code = err && (err.code || err.errorno || '');
+  return [
+    'ETIMEDOUT',
+    'ECONNRESET',
+    'ECONNREFUSED',
+    'PROTOCOL_CONNECTION_LOST',
+    'ER_SERVER_LOST',
+  ].includes(code);
+}
+
 async function executeDbCall(method, args) {
+  if (!pool) {
+    throw new Error('Database not initialized');
+  }
+
+  // Inner runner – extracted so we can retry once after reconnect
+  const run = () => _executeDbCallInner(method, args);
+
+  try {
+    return await run();
+  } catch (firstErr) {
+    if (isFatalConnectionError(firstErr)) {
+      console.warn('DB connection lost, attempting pool reconnect before retry...', firstErr.code || firstErr.message);
+      try {
+        await reconnectPool();
+        return await run(); // single retry on fresh pool
+      } catch (retryErr) {
+        console.error('DB retry after reconnect also failed:', retryErr.message);
+        throw retryErr;
+      }
+    }
+    throw firstErr;
+  }
+}
+
+async function _executeDbCallInner(method, args) {
   if (!pool) {
     throw new Error('Database not initialized');
   }
@@ -746,7 +914,7 @@ async function executeDbCall(method, args) {
     case 'getProducts': {
       const [branchId] = args;
       const targetBranch = branchId || 1;
-      const [rows] = await pool.query('SELECT * FROM Products WHERE branchId = ? ORDER BY id ASC', [targetBranch]);
+      const [rows] = await pool.query('SELECT * FROM Products WHERE branchId = ? OR branchId IS NULL ORDER BY id ASC', [targetBranch]);
       return rows.map(r => ({
         ...r,
         images: parseJsonField(r.images)
@@ -754,7 +922,7 @@ async function executeDbCall(method, args) {
     }
     case 'createProduct': {
       const [productData, branchId] = args;
-      const targetBranch = branchId || 1;
+      const targetBranch = branchId === undefined ? 1 : branchId;
       const now = new Date().toISOString();
       const [res] = await pool.query(
         `INSERT INTO Products (name, company, productCode, count, costPrice, sellingPrice, discount, gst, finalPrice, barcode, createdAt, updatedAt, hsnCode, skuCode, categoryName, images, branchId)
@@ -769,7 +937,7 @@ async function executeDbCall(method, args) {
           productData.discount || 0,
           productData.gst || 0,
           productData.finalPrice || 0,
-          productData.barcode || '',
+          productData.barcode && productData.barcode.trim() !== '' ? productData.barcode.trim() : null,
           now,
           now,
           productData.hsnCode || '',
@@ -791,6 +959,8 @@ async function executeDbCall(method, args) {
         fields.push(`\`${key}\` = ?`);
         if (key === 'images') {
           values.push(JSON.stringify(val || []));
+        } else if (key === 'barcode') {
+          values.push(val && val.trim() !== '' ? val.trim() : null);
         } else {
           values.push(val);
         }
@@ -883,7 +1053,7 @@ async function executeDbCall(method, args) {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           customerData.name,
-          customerData.phone || '',
+          customerData.phone && customerData.phone.trim() !== '' ? customerData.phone.trim() : null,
           customerData.email || '',
           customerData.address || '',
           customerData.creditBalance || 0,
@@ -907,6 +1077,8 @@ async function executeDbCall(method, args) {
         fields.push(`\`${key}\` = ?`);
         if (key === 'creditHistory') {
           values.push(JSON.stringify(val || []));
+        } else if (key === 'phone') {
+          values.push(val && val.trim() !== '' ? val.trim() : null);
         } else {
           values.push(val);
         }
@@ -1310,6 +1482,9 @@ async function executeDbCall(method, args) {
       await pool.query('DELETE FROM Customers');
       await pool.query('DELETE FROM Products');
       await pool.query('DELETE FROM Categories');
+      await pool.query('DELETE FROM BikeServiceReminders');
+      await pool.query('DELETE FROM Bikes');
+      await pool.query('DELETE FROM Services');
       return true;
     }
     case 'login': {
@@ -1369,19 +1544,51 @@ async function executeDbCall(method, args) {
       return res.affectedRows > 0;
     }
     case 'getRolePermissions': {
-      const [role] = args;
-      const [rows] = await pool.query('SELECT pageId FROM RolePermissions WHERE role = ?', [role]);
+      const [role, branchId] = args;
+      const targetBranch = branchId || 1;
+      const [rows] = await pool.query('SELECT pageId FROM RolePermissions WHERE role = ? AND branchId = ?', [role, targetBranch]);
+      if (rows.length === 0 && targetBranch !== 1) {
+        const [fallbackRows] = await pool.query('SELECT pageId FROM RolePermissions WHERE role = ? AND branchId = 1', [role]);
+        return fallbackRows.map(r => r.pageId);
+      }
       return rows.map(r => r.pageId);
     }
     case 'updateRolePermissions': {
-      const [role, pageIds] = args;
+      const [role, branchId, pageIds] = args;
+      const targetBranch = branchId || 1;
       const conn = await pool.getConnection();
       try {
         await conn.beginTransaction();
-        await conn.query('DELETE FROM RolePermissions WHERE role = ?', [role]);
+        await conn.query('DELETE FROM RolePermissions WHERE role = ? AND branchId = ?', [role, targetBranch]);
         if (pageIds && pageIds.length > 0) {
-          const insertValues = pageIds.map(pId => [role, pId]);
-          await conn.query('INSERT INTO RolePermissions (role, pageId) VALUES ?', [insertValues]);
+          const insertValues = pageIds.map(pId => [role, pId, targetBranch]);
+          await conn.query('INSERT INTO RolePermissions (role, pageId, branchId) VALUES ?', [insertValues]);
+        }
+        await conn.commit();
+        return true;
+      } catch (err) {
+        await conn.rollback();
+        throw err;
+      } finally {
+        conn.release();
+      }
+    }
+    case 'getUserPermissions': {
+      const [username, branchId] = args;
+      const targetBranch = branchId || 1;
+      const [rows] = await pool.query('SELECT pageId FROM UserPermissions WHERE username = ? AND branchId = ?', [username, targetBranch]);
+      return rows.map(r => r.pageId);
+    }
+    case 'updateUserPermissions': {
+      const [username, branchId, pageIds] = args;
+      const targetBranch = branchId || 1;
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        await conn.query('DELETE FROM UserPermissions WHERE username = ? AND branchId = ?', [username, targetBranch]);
+        if (pageIds && pageIds.length > 0) {
+          const insertValues = pageIds.map(pId => [username, pId, targetBranch]);
+          await conn.query('INSERT INTO UserPermissions (username, pageId, branchId) VALUES ?', [insertValues]);
         }
         await conn.commit();
         return true;
@@ -1468,6 +1675,117 @@ async function executeDbCall(method, args) {
     case 'deleteService': {
       const [id] = args;
       const [res] = await pool.query('DELETE FROM Services WHERE id = ?', [id]);
+      return res.affectedRows > 0;
+    }
+    case 'getBikes': {
+      const [branchId] = args;
+      const targetBranch = branchId || 1;
+      const [rows] = await pool.query('SELECT * FROM Bikes WHERE branchId = ? ORDER BY id DESC', [targetBranch]);
+      return rows;
+    }
+    case 'createBike': {
+      const [bikeData, branchId] = args;
+      const targetBranch = branchId || 1;
+      const now = new Date().toISOString();
+      const [res] = await pool.query(
+        `INSERT INTO Bikes (brand, modelName, chassisNumber, engineNumber, color, price, costPrice, sellingPrice, discountPrice, discountPercentage, gstPercentage, showGstInBill, finalPrice, status, soldToCustomerId, saleDate, branchId, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          bikeData.brand,
+          bikeData.modelName,
+          bikeData.chassisNumber,
+          bikeData.engineNumber,
+          bikeData.color || '',
+          bikeData.price || 0.00,
+          bikeData.costPrice || 0.00,
+          bikeData.sellingPrice || 0.00,
+          bikeData.discountPrice || 0.00,
+          bikeData.discountPercentage || 0.00,
+          bikeData.gstPercentage || 0.00,
+          bikeData.showGstInBill !== undefined ? bikeData.showGstInBill : true,
+          bikeData.finalPrice || 0.00,
+          bikeData.status || 'available',
+          bikeData.soldToCustomerId || null,
+          bikeData.saleDate || null,
+          targetBranch,
+          now,
+          now
+        ]
+      );
+      return res.insertId;
+    }
+    case 'updateBike': {
+      const [id, updates] = args;
+      const now = new Date().toISOString();
+      const fields = [];
+      const values = [];
+      for (const [key, val] of Object.entries(updates)) {
+        if (key === 'id' || key === 'createdAt' || key === 'updatedAt' || key === 'branchId') continue;
+        fields.push(`\`${key}\` = ?`);
+        values.push(val);
+      }
+      if (fields.length === 0) return true;
+      fields.push('`updatedAt` = ?');
+      values.push(now);
+      values.push(id);
+      const [res] = await pool.query(`UPDATE Bikes SET ${fields.join(', ')} WHERE id = ?`, values);
+      return res.affectedRows > 0;
+    }
+    case 'deleteBike': {
+      const [id] = args;
+      const [res] = await pool.query('DELETE FROM Bikes WHERE id = ?', [id]);
+      return res.affectedRows > 0;
+    }
+    case 'getBikeServiceReminders': {
+      const [branchId] = args;
+      const targetBranch = branchId || 1;
+      const [rows] = await pool.query('SELECT * FROM BikeServiceReminders WHERE branchId = ? ORDER BY id DESC', [targetBranch]);
+      return rows;
+    }
+    case 'createBikeServiceReminder': {
+      const [reminderData, branchId] = args;
+      const targetBranch = branchId || 1;
+      const now = new Date().toISOString();
+      const [res] = await pool.query(
+        `INSERT INTO BikeServiceReminders (bikeId, customerId, serviceNo, scheduledDays, scheduledDate, reminderDate, actualVisitDate, status, notes, branchId, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          reminderData.bikeId,
+          reminderData.customerId,
+          reminderData.serviceNo,
+          reminderData.scheduledDays,
+          reminderData.scheduledDate,
+          reminderData.reminderDate,
+          reminderData.actualVisitDate || null,
+          reminderData.status || 'pending',
+          reminderData.notes || '',
+          targetBranch,
+          now,
+          now
+        ]
+      );
+      return res.insertId;
+    }
+    case 'updateBikeServiceReminder': {
+      const [id, updates] = args;
+      const now = new Date().toISOString();
+      const fields = [];
+      const values = [];
+      for (const [key, val] of Object.entries(updates)) {
+        if (key === 'id' || key === 'createdAt' || key === 'updatedAt' || key === 'branchId') continue;
+        fields.push(`\`${key}\` = ?`);
+        values.push(val);
+      }
+      if (fields.length === 0) return true;
+      fields.push('`updatedAt` = ?');
+      values.push(now);
+      values.push(id);
+      const [res] = await pool.query(`UPDATE BikeServiceReminders SET ${fields.join(', ')} WHERE id = ?`, values);
+      return res.affectedRows > 0;
+    }
+    case 'deleteBikeServiceReminder': {
+      const [id] = args;
+      const [res] = await pool.query('DELETE FROM BikeServiceReminders WHERE id = ?', [id]);
       return res.affectedRows > 0;
     }
     default:

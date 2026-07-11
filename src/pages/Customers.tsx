@@ -9,16 +9,17 @@ import {
   Mail,
   MapPin,
   Receipt,
-  TrendingUp,
   X,
   Save,
   Download,
-  AlertCircle
+  AlertCircle,
+  Wrench,
+  TrendingUp
 } from 'lucide-react';
 import { Customer } from '../types';
 import { useCustomers, useBills } from '../hooks/useDatabase';
 
-type Page = 'dashboard' | 'products' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'reports' | 'settings';
+type Page = 'dashboard' | 'products' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'reports' | 'settings' | 'services' | 'service_bill';
 
 interface CustomersProps {
   onNavigate: (page: Page) => void;
@@ -754,13 +755,30 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
                       </div>
                     )}
 
-                    <button
-                      onClick={() => viewHistory(customer)}
-                      className="btn-primary mt-3 w-full px-4 py-2 text-sm"
-                    >
-                        <Receipt className="h-4 w-4" />
-                      View History
-                    </button>
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                      <button
+                        onClick={() => viewHistory(customer)}
+                        className="btn btn-secondary py-2 text-xs flex items-center justify-center gap-1.5 border-slate-200"
+                      >
+                        <Receipt className="h-3.5 w-3.5" />
+                        View History
+                      </button>
+                      <button
+                        onClick={() => {
+                          const redirectPayload = {
+                            customerId: customer.id,
+                            vehicleName: customer.vehicleName || '',
+                            vehicleNumber: customer.vehicleNumber || ''
+                          };
+                          localStorage.setItem('services_redirect_customer', JSON.stringify(redirectPayload));
+                          onNavigate('services');
+                        }}
+                        className="btn btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
+                      >
+                        <Wrench className="h-3.5 w-3.5" />
+                        View Service
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

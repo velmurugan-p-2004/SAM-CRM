@@ -14,13 +14,14 @@ import Settings from './pages/Settings';
 import OnlineOrders from './pages/OnlineOrders';
 import Services from './pages/Services';
 import ServiceBill from './pages/ServiceBill';
+import SaleBike from './pages/SaleBike';
 import { useDatabase } from './hooks/useDatabase';
 import { useAuth, AuthProvider } from './hooks/useAuth';
 import { useECommerceIntegration } from './hooks/useECommerceIntegration';
 import Login from './pages/Login';
 import { Database, FileText, FileCode, FolderDown } from 'lucide-react';
 
-type Page = 'dashboard' | 'services' | 'service_bill' | 'products' | 'categories' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'parties' | 'reports' | 'templates' | 'settings' | 'online_orders';
+type Page = 'dashboard' | 'services' | 'service_bill' | 'products' | 'categories' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'parties' | 'reports' | 'templates' | 'settings' | 'online_orders' | 'sale_bike';
 
 function AppContent() {
   const { currentUser, allowedPages } = useAuth();
@@ -143,6 +144,8 @@ function AppContent() {
         return <InvoiceTemplates />;
       case 'online_orders':
         return <OnlineOrders />;
+      case 'sale_bike':
+        return <SaleBike />;
       case 'settings':
         return <Settings />;
       default:

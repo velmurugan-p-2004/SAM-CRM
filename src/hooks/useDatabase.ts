@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Product, Category, Customer, Bill, InventoryTransaction, Party, PartyStockMovement, PartyPayment, Service } from '../types';
+import { Product, Category, Customer, Bill, InventoryTransaction, Party, PartyStockMovement, PartyPayment, Service, Bike, BikeServiceReminder } from '../types';
 
 class BrowserDatabase {
   private isInitialized = false;
@@ -60,7 +60,7 @@ class BrowserDatabase {
     return await this.getElectronApi().dbCall('getProducts', branchId);
   }
 
-  async createProduct(productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>, branchId?: number): Promise<number> {
+  async createProduct(productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>, branchId?: number | null): Promise<number> {
     return await this.getElectronApi().dbCall('createProduct', productData, branchId);
   }
 
@@ -184,12 +184,20 @@ class BrowserDatabase {
     return await this.getElectronApi().dbCall('deleteUser', id);
   }
 
-  async getRolePermissions(role: string): Promise<string[]> {
-    return await this.getElectronApi().dbCall('getRolePermissions', role);
+  async getRolePermissions(role: string, branchId?: number): Promise<string[]> {
+    return await this.getElectronApi().dbCall('getRolePermissions', role, branchId);
   }
 
-  async updateRolePermissions(role: string, pageIds: string[]): Promise<boolean> {
-    return await this.getElectronApi().dbCall('updateRolePermissions', role, pageIds);
+  async updateRolePermissions(role: string, branchId: number, pageIds: string[]): Promise<boolean> {
+    return await this.getElectronApi().dbCall('updateRolePermissions', role, branchId, pageIds);
+  }
+
+  async getUserPermissions(username: string, branchId?: number): Promise<string[]> {
+    return await this.getElectronApi().dbCall('getUserPermissions', username, branchId);
+  }
+
+  async updateUserPermissions(username: string, branchId: number, pageIds: string[]): Promise<boolean> {
+    return await this.getElectronApi().dbCall('updateUserPermissions', username, branchId, pageIds);
   }
 
   async getBranches(): Promise<any[]> {
@@ -222,6 +230,38 @@ class BrowserDatabase {
 
   async deleteService(id: number): Promise<boolean> {
     return await this.getElectronApi().dbCall('deleteService', id);
+  }
+
+  async getBikes(branchId?: number): Promise<Bike[]> {
+    return await this.getElectronApi().dbCall('getBikes', branchId);
+  }
+
+  async createBike(bikeData: Omit<Bike, 'id' | 'createdAt' | 'updatedAt'>, branchId?: number): Promise<number> {
+    return await this.getElectronApi().dbCall('createBike', bikeData, branchId);
+  }
+
+  async updateBike(id: number, bikeData: Partial<Omit<Bike, 'id' | 'createdAt' | 'updatedAt'>>): Promise<boolean> {
+    return await this.getElectronApi().dbCall('updateBike', id, bikeData);
+  }
+
+  async deleteBike(id: number): Promise<boolean> {
+    return await this.getElectronApi().dbCall('deleteBike', id);
+  }
+
+  async getBikeServiceReminders(branchId?: number): Promise<BikeServiceReminder[]> {
+    return await this.getElectronApi().dbCall('getBikeServiceReminders', branchId);
+  }
+
+  async createBikeServiceReminder(reminderData: Omit<BikeServiceReminder, 'id' | 'createdAt' | 'updatedAt'>, branchId?: number): Promise<number> {
+    return await this.getElectronApi().dbCall('createBikeServiceReminder', reminderData, branchId);
+  }
+
+  async updateBikeServiceReminder(id: number, reminderData: Partial<Omit<BikeServiceReminder, 'id' | 'createdAt' | 'updatedAt'>>): Promise<boolean> {
+    return await this.getElectronApi().dbCall('updateBikeServiceReminder', id, reminderData);
+  }
+
+  async deleteBikeServiceReminder(id: number): Promise<boolean> {
+    return await this.getElectronApi().dbCall('deleteBikeServiceReminder', id);
   }
 }
 
@@ -270,7 +310,20 @@ export const useProducts = (branchId?: number) => {
 
   const addProduct = async (productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
-      const id = await db.createProduct(productData, getTargetBranchId());
+      let branchToSave: number | null = getTargetBranchId();
+      try {
+        const savedUser = sessionStorage.getItem('billing_app_current_user');
+        if (savedUser) {
+          const user = JSON.parse(savedUser);
+          if (user.role === 'super_admin' || user.role === 'admin') {
+            branchToSave = null;
+          }
+        }
+      } catch (e) {
+        console.error('Failed to resolve user role for branch mapping:', e);
+      }
+
+      const id = await db.createProduct(productData, branchToSave);
       await loadProducts(); // Reload products
       return id;
     } catch (err) {
@@ -804,5 +857,163 @@ export const useServices = (branchId?: number) => {
     updateService,
     deleteService,
     refreshServices: loadServices
+  };
+};
+
+export const useBikes = (branchId?: number) => {
+  const [bikes, setBikes] = useState<Bike[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const getTargetBranchId = () => branchId !== undefined ? branchId : getActiveBranchId();
+
+  const loadBikes = async () => {
+    try {
+      setLoading(true);
+      const rows = await browserDb.getBikes(getTargetBranchId());
+      setBikes(rows || []);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load bikes');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addBike = async (bikeData: Omit<Bike, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      const id = await browserDb.createBike(bikeData, getTargetBranchId());
+      await loadBikes();
+      return id;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add bike');
+      throw err;
+    }
+  };
+
+  const updateBike = async (id: number, bikeData: Partial<Omit<Bike, 'id' | 'createdAt' | 'updatedAt'>>) => {
+    try {
+      const success = await browserDb.updateBike(id, bikeData);
+      if (success) {
+        await loadBikes();
+      }
+      return success;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update bike');
+      throw err;
+    }
+  };
+
+  const deleteBike = async (id: number) => {
+    try {
+      const success = await browserDb.deleteBike(id);
+      if (success) {
+        await loadBikes();
+      }
+      return success;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete bike');
+      throw err;
+    }
+  };
+
+  useEffect(() => {
+    loadBikes();
+    const handleBranchChange = () => {
+      loadBikes();
+    };
+    window.addEventListener('branch-changed', handleBranchChange);
+    return () => {
+      window.removeEventListener('branch-changed', handleBranchChange);
+    };
+  }, [branchId]);
+
+  return {
+    bikes,
+    loading,
+    error,
+    addBike,
+    updateBike,
+    deleteBike,
+    refreshBikes: loadBikes
+  };
+};
+
+export const useBikeServiceReminders = (branchId?: number) => {
+  const [reminders, setReminders] = useState<BikeServiceReminder[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const getTargetBranchId = () => branchId !== undefined ? branchId : getActiveBranchId();
+
+  const loadReminders = async () => {
+    try {
+      setLoading(true);
+      const rows = await browserDb.getBikeServiceReminders(getTargetBranchId());
+      setReminders(rows || []);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load service reminders');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addReminder = async (reminderData: Omit<BikeServiceReminder, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      const id = await browserDb.createBikeServiceReminder(reminderData, getTargetBranchId());
+      await loadReminders();
+      return id;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add service reminder');
+      throw err;
+    }
+  };
+
+  const updateReminder = async (id: number, reminderData: Partial<Omit<BikeServiceReminder, 'id' | 'createdAt' | 'updatedAt'>>) => {
+    try {
+      const success = await browserDb.updateBikeServiceReminder(id, reminderData);
+      if (success) {
+        await loadReminders();
+      }
+      return success;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update service reminder');
+      throw err;
+    }
+  };
+
+  const deleteReminder = async (id: number) => {
+    try {
+      const success = await browserDb.deleteBikeServiceReminder(id);
+      if (success) {
+        await loadReminders();
+      }
+      return success;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete service reminder');
+      throw err;
+    }
+  };
+
+  useEffect(() => {
+    loadReminders();
+    const handleBranchChange = () => {
+      loadReminders();
+    };
+    window.addEventListener('branch-changed', handleBranchChange);
+    return () => {
+      window.removeEventListener('branch-changed', handleBranchChange);
+    };
+  }, [branchId]);
+
+  return {
+    reminders,
+    loading,
+    error,
+    addReminder,
+    updateReminder,
+    deleteReminder,
+    refreshReminders: loadReminders
   };
 };

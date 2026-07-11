@@ -173,25 +173,50 @@ const Settings: React.FC = () => {
     }
   };
 
-  const { refreshPermissions } = useAuth();
+  const { refreshPermissions, activeBranchId } = useAuth();
+  const [configTargetType, setConfigTargetType] = useState<'role' | 'user'>('role');
   const [selectedConfigRole, setSelectedConfigRole] = useState<'employee' | 'sub_admin'>('employee');
+  const [selectedConfigUser, setSelectedConfigUser] = useState<string>('');
+  const [selectedConfigBranch, setSelectedConfigBranch] = useState<number>(1);
   const [rolePages, setRolePages] = useState<string[]>([]);
   const [savePermsLoading, setSavePermsLoading] = useState(false);
 
-  const loadRolePermissions = async () => {
+  // Initialize selectedConfigBranch when activeBranchId is loaded
+  useEffect(() => {
+    if (activeBranchId) {
+      setSelectedConfigBranch(activeBranchId);
+    }
+  }, [activeBranchId]);
+
+  // Set default user selection when users list loads
+  useEffect(() => {
+    const permUsers = users.filter(u => u.role === 'employee' || u.role === 'sub_admin');
+    if (permUsers.length > 0 && !selectedConfigUser) {
+      setSelectedConfigUser(permUsers[0].username);
+    }
+  }, [users]);
+
+  const loadPermissionsData = async () => {
     try {
-      const perms = await db.getRolePermissions(selectedConfigRole);
-      setRolePages(perms || []);
+      if (configTargetType === 'role') {
+        const perms = await db.getRolePermissions(selectedConfigRole, selectedConfigBranch);
+        setRolePages(perms || []);
+      } else if (configTargetType === 'user' && selectedConfigUser) {
+        const perms = await db.getUserPermissions(selectedConfigUser, selectedConfigBranch);
+        setRolePages(perms || []);
+      } else {
+        setRolePages([]);
+      }
     } catch (e) {
-      console.error(`Failed to load ${selectedConfigRole} permissions:`, e);
+      console.error(`Failed to load permissions:`, e);
     }
   };
 
   useEffect(() => {
     if (isSuperAdmin || isAdmin) {
-      loadRolePermissions();
+      loadPermissionsData();
     }
-  }, [isSuperAdmin, isAdmin, selectedConfigRole]);
+  }, [isSuperAdmin, isAdmin, configTargetType, selectedConfigRole, selectedConfigUser, selectedConfigBranch]);
 
   const handlePagePermissionToggle = (pageId: string) => {
     setRolePages(prev =>
@@ -201,14 +226,23 @@ const Settings: React.FC = () => {
 
   const handleSavePermissions = async () => {
     if (rolePages.length === 0) {
-      alert(`${selectedConfigRole === 'employee' ? 'Employee' : 'Sub Admin'} must have access to at least one page.`);
+      alert(`Access configurations must have at least one authorized page.`);
       return;
     }
     try {
       setSavePermsLoading(true);
-      await db.updateRolePermissions(selectedConfigRole, rolePages);
+      if (configTargetType === 'role') {
+        await db.updateRolePermissions(selectedConfigRole, selectedConfigBranch, rolePages);
+        alert(`Page access levels saved successfully for Role: ${selectedConfigRole === 'employee' ? 'Employee' : 'Sub Admin'} (Branch ID: ${selectedConfigBranch})!`);
+      } else {
+        if (!selectedConfigUser) {
+          alert('Please select a user account to configure.');
+          return;
+        }
+        await db.updateUserPermissions(selectedConfigUser, selectedConfigBranch, rolePages);
+        alert(`Page access levels saved successfully for User: ${selectedConfigUser} (Branch ID: ${selectedConfigBranch})!`);
+      }
       await refreshPermissions();
-      alert(`${selectedConfigRole === 'employee' ? 'Employee' : 'Sub Admin'} page access permissions updated successfully!`);
     } catch (err: any) {
       alert('Failed to save permissions: ' + (err.message || String(err)));
     } finally {
@@ -481,7 +515,7 @@ const Settings: React.FC = () => {
       alert('Only Super Administrators are authorized to clear the database.');
       return;
     }
-    if (!confirm('This will permanently delete all products, customers, bills, and transactions. Continue?')) return;
+    if (!confirm('This will permanently delete all products, customers, bills, transactions, service job cards, bikes, and service reminders. Continue?')) return;
     try {
       await db.wipeDatabase();
       alert('All application data cleared. The app will reload now.');
@@ -1151,35 +1185,81 @@ const Settings: React.FC = () => {
 
         {(isSuperAdmin || isAdmin) && (
           <div className="card border border-white/60 bg-white/85 shadow-soft lg:col-span-2">
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4">
               <Users className="h-6 w-6 text-primary-600" />
-              <h2 className="text-xl font-semibold text-slate-900">Role Page Access Control</h2>
+              <h2 className="text-xl font-semibold text-slate-900">Branch-Specific Page Access Control</h2>
             </div>
-            <p className="text-sm text-slate-600 mb-4">
-              Select a role tab to configure which pages it is authorized to view. Changes will apply immediately across all client workstations.
+            <p className="text-sm text-slate-600 mb-6">
+              Configure page authorization policies separately by **User Account** or **General Role**, isolated per individual **Store Branch**.
             </p>
 
-            <div className="flex gap-2 mb-4 border-b border-slate-200 pb-3">
-              <button
-                onClick={() => setSelectedConfigRole('employee')}
-                className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${
-                  selectedConfigRole === 'employee'
-                    ? 'bg-primary-600 text-white shadow-md'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                Employee
-              </button>
-              <button
-                onClick={() => setSelectedConfigRole('sub_admin')}
-                className={`px-4 py-2 text-sm font-semibold rounded-xl transition-all ${
-                  selectedConfigRole === 'sub_admin'
-                    ? 'bg-primary-600 text-white shadow-md'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                Sub Admin
-              </button>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 bg-slate-50 rounded-2xl border border-slate-200/60">
+              {/* Target Type Selector */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Configuration Type</label>
+                <select
+                  value={configTargetType}
+                  onChange={(e) => {
+                    setConfigTargetType(e.target.value as 'role' | 'user');
+                    setRolePages([]);
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-primary-500 cursor-pointer font-bold"
+                >
+                  <option value="role">By General Role</option>
+                  <option value="user">By Dedicated User Account</option>
+                </select>
+              </div>
+
+              {/* Role/User Selector */}
+              <div>
+                {configTargetType === 'role' ? (
+                  <>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Select Target Role</label>
+                    <select
+                      value={selectedConfigRole}
+                      onChange={(e) => setSelectedConfigRole(e.target.value as 'employee' | 'sub_admin')}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-primary-500 cursor-pointer font-bold"
+                    >
+                      <option value="employee">Employee</option>
+                      <option value="sub_admin">Sub Admin</option>
+                    </select>
+                  </>
+                ) : (
+                  <>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Select Dedicated User</label>
+                    <select
+                      value={selectedConfigUser}
+                      onChange={(e) => setSelectedConfigUser(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-primary-500 cursor-pointer font-bold"
+                    >
+                      <option value="">-- Choose User Account --</option>
+                      {users
+                        .filter(u => u.role === 'employee' || u.role === 'sub_admin')
+                        .map(u => (
+                          <option key={u.id} value={u.username}>
+                            {u.name} ({u.username} - {u.role === 'employee' ? 'Employee' : 'Sub Admin'})
+                          </option>
+                        ))}
+                    </select>
+                  </>
+                )}
+              </div>
+
+              {/* Branch Selector */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Select Store Branch</label>
+                <select
+                  value={selectedConfigBranch}
+                  onChange={(e) => setSelectedConfigBranch(Number(e.target.value))}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-primary-500 cursor-pointer font-bold"
+                >
+                  {branches.map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} (ID: {b.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-6">
@@ -1188,6 +1268,7 @@ const Settings: React.FC = () => {
                 { id: 'billing', label: 'New Bill' },
                 { id: 'services', label: 'Service Tickets' },
                 { id: 'service_bill', label: 'Service Billing' },
+                { id: 'sale_bike', label: 'Sale Bike' },
                 { id: 'products', label: 'Products Catalog' },
                 { id: 'categories', label: 'Categories' },
                 { id: 'barcodes', label: 'Barcodes Manager' },
@@ -1212,11 +1293,11 @@ const Settings: React.FC = () => {
             </div>
             <button
               onClick={handleSavePermissions}
-              disabled={savePermsLoading}
+              disabled={savePermsLoading || (configTargetType === 'user' && !selectedConfigUser)}
               className="btn-primary inline-flex items-center gap-2 px-5 py-2"
             >
               <Save className="h-4 w-4" />
-              {savePermsLoading ? 'Saving...' : `Save ${selectedConfigRole === 'employee' ? 'Employee' : 'Sub Admin'} Access Levels`}
+              {savePermsLoading ? 'Saving...' : 'Save Authorized Access Levels'}
             </button>
           </div>
         )}
@@ -1224,7 +1305,7 @@ const Settings: React.FC = () => {
         {isSuperAdmin && (
           <div className="card border border-red-100 bg-gradient-to-br from-red-50 to-white shadow-soft">
             <h2 className="mb-4 text-xl font-semibold text-slate-900">Danger Zone</h2>
-            <p className="mb-3 text-sm text-slate-600">Clear all data from the local database (products, customers, bills, transactions).</p>
+            <p className="mb-3 text-sm text-slate-600">Clear all data from the local database (products, customers, bills, transactions, service job cards, bikes, and service reminders).</p>
             <button onClick={clearAllData} className="btn-danger px-4 py-2">Clear All Data</button>
           </div>
         )}

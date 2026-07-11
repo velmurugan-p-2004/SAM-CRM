@@ -15,8 +15,7 @@ import {
   Save,
   Printer,
   ArrowRight,
-  TrendingUp,
-  FileText
+  RefreshCw
 } from 'lucide-react';
 import { useServices, useCustomers } from '../hooks/useDatabase';
 import { Service, Bill, BillItem } from '../types';
@@ -59,7 +58,7 @@ const formatIndianVehicleNumber = (val: string) => {
 };
 
 const Services: React.FC = () => {
-  const { services, addService, updateService, deleteService, loading } = useServices();
+  const { services, addService, updateService, deleteService, refreshServices, loading } = useServices();
   const { customers } = useCustomers();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -89,6 +88,65 @@ const Services: React.FC = () => {
     estimatedCost: '' as string | number,
     status: 'pending' as 'pending' | 'in_progress' | 'completed' | 'cancelled'
   });
+
+  React.useEffect(() => {
+    const redirectDataRaw = localStorage.getItem('services_redirect_customer');
+    if (redirectDataRaw && services && services.length > 0) {
+      localStorage.removeItem('services_redirect_customer');
+      try {
+        const { customerId, vehicleName, vehicleNumber } = JSON.parse(redirectDataRaw);
+        
+        // Find if there is an active (non-completed, non-cancelled) job card for this customer/vehicle
+        const activeTicket = services.find(s => 
+          (s.customerId === customerId || (vehicleNumber && s.vehicleNumber.toLowerCase() === vehicleNumber.toLowerCase())) &&
+          s.status !== 'completed' && s.status !== 'cancelled'
+        );
+        
+        if (activeTicket) {
+          // Redirect to existing job card: filter search list and open modal
+          setSearchTerm(activeTicket.vehicleNumber);
+          setEditingService(activeTicket);
+          setFormData({
+            customerId: activeTicket.customerId || '',
+            vehicleName: activeTicket.vehicleName || '',
+            vehicleNumber: activeTicket.vehicleNumber || '',
+            serviceDate: activeTicket.serviceDate ? activeTicket.serviceDate.split('T')[0] : new Date().toISOString().split('T')[0],
+            description: activeTicket.description || '',
+            estimatedCost: activeTicket.estimatedCost || '',
+            status: activeTicket.status || 'pending'
+          });
+          if (activeTicket.customerId) {
+            const linkedCustomer = customers.find(c => c.id === activeTicket.customerId);
+            if (linkedCustomer) {
+              setCustomerSearchQuery(linkedCustomer.name);
+            }
+          }
+          setShowFormModal(true);
+        } else {
+          // Create a new job card: open form and prefill data
+          setEditingService(null);
+          setFormData({
+            customerId: customerId || '',
+            vehicleName: vehicleName || '',
+            vehicleNumber: vehicleNumber || '',
+            serviceDate: new Date().toISOString().split('T')[0],
+            description: '',
+            estimatedCost: '',
+            status: 'pending'
+          });
+          if (customerId) {
+            const linkedCustomer = customers.find(c => c.id === customerId);
+            if (linkedCustomer) {
+              setCustomerSearchQuery(linkedCustomer.name);
+            }
+          }
+          setShowFormModal(true);
+        }
+      } catch (e) {
+        console.error('Failed to parse redirect data', e);
+      }
+    }
+  }, [services, customers]);
 
   const handleInputChange = (field: string, value: string) => {
     let finalValue = value;
@@ -291,6 +349,7 @@ const Services: React.FC = () => {
         product: {
           id: itemIdCounter,
           name: p.name,
+          company: '',
           barcode: 'SPARE_PART',
           sellingPrice: p.price,
           finalPrice: p.price,
@@ -318,6 +377,7 @@ const Services: React.FC = () => {
         product: {
           id: itemIdCounter,
           name: `${a.name} [Additional Charge]`,
+          company: '',
           barcode: 'SERVICE_CUSTOM',
           sellingPrice: a.amount,
           finalPrice: a.amount,
@@ -346,6 +406,7 @@ const Services: React.FC = () => {
         product: {
           id: -999,
           name: `Labour: ${laborDesc}`,
+          company: '',
           barcode: 'SERVICE_CUSTOM',
           sellingPrice: laborTotal,
           finalPrice: laborTotal,
@@ -558,6 +619,14 @@ const Services: React.FC = () => {
           <p className="mt-2 max-w-2xl text-slate-600">Track and manage client vehicles, repair progress, and job sheets seamlessly.</p>
         </div>
         <div className="flex gap-3 xl:justify-end">
+          <button
+            type="button"
+            onClick={refreshServices}
+            className="btn-secondary flex items-center justify-center p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700"
+            title="Refresh Job Cards"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
           <button
             onClick={() => {
               resetForm();
@@ -906,14 +975,15 @@ const Services: React.FC = () => {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
+                <label className="mb-1.5 block text-sm font-semibold text-slate-800">
                   Service Tasks / Descriptions
+                  <span className="text-red-500 ml-0.5">*</span>
                 </label>
                 <textarea
                   required
                   value={formData.description}
                   onChange={(e) => handleInputChange('description', e.target.value)}
-                  className="input w-full h-24 resize-none"
+                  className="w-full h-28 resize-none rounded-lg px-3 py-2.5 text-sm text-slate-900 font-medium bg-white border-2 border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition placeholder:text-slate-400 leading-relaxed"
                   placeholder="Describe service work (e.g. Engine Oil Change, AC repair...)"
                 />
               </div>

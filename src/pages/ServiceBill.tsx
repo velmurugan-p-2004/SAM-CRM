@@ -1,24 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Search,
   Wrench,
-  Clock,
   CheckCircle2,
   Printer,
-  ArrowRight,
-  DollarSign,
-  Plus,
   X,
   Check,
   Save,
   Package,
-  RefreshCw,
-  FileText,
   AlertCircle,
-  TrendingUp,
   User,
-  CheckSquare,
-  Square,
   ChevronRight,
   ShieldCheck,
   History,
@@ -32,7 +22,7 @@ interface ServiceBillProps {
   onNavigate?: (page: any) => void;
 }
 
-const ServiceBill: React.FC<ServiceBillProps> = ({ onNavigate }) => {
+const ServiceBill: React.FC<ServiceBillProps> = () => {
   const { services, updateService, refreshServices, loading: servicesLoading } = useServices();
   const { products, updateProduct, refreshProducts, loading: productsLoading } = useProducts();
   const { customers } = useCustomers();
@@ -853,20 +843,31 @@ const ServiceBill: React.FC<ServiceBillProps> = ({ onNavigate }) => {
                 </div>
               )}
 
-              <div className="mb-3 flex items-center justify-between flex-shrink-0">
+              <div className="mb-3 flex items-center justify-between flex-shrink-0 gap-2">
                 <h2 className="text-base font-extrabold text-slate-950 flex items-center gap-2">
                   <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-primary-100 text-primary-600 text-xs font-bold">2</span>
                   Select Target Vehicles
                 </h2>
                 
-                {activeServices.length > 0 && partsBasket.length === 1 && (
+                <div className="flex items-center gap-2.5">
+                  {activeServices.length > 0 && partsBasket.length === 1 && (
+                    <button
+                      onClick={handleSelectAllVehicles}
+                      className="text-xs font-bold text-primary-600 hover:text-primary-800 flex items-center gap-1 bg-primary-50/30 px-3 py-1.5 rounded-xl border border-primary-200/30 hover:border-primary-300 transition-all animate-fadeIn"
+                    >
+                      {activeServices.every(s => selectedServiceIds.includes(s.id)) ? 'Deselect All' : 'Select All'}
+                    </button>
+                  )}
+                  
                   <button
-                    onClick={handleSelectAllVehicles}
-                    className="text-xs font-bold text-primary-600 hover:text-primary-800 flex items-center gap-1 bg-primary-50/30 px-3 py-1.5 rounded-xl border border-primary-200/30 hover:border-primary-300 transition-all animate-fadeIn"
+                    onClick={triggerSaveConfirmation}
+                    disabled={isSaving || partsBasket.length === 0 || selectedServiceIds.length === 0}
+                    className="btn btn-primary py-2 px-4 font-bold shadow-lg flex items-center gap-1.5 text-xs disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:shadow-none transition-all duration-200"
                   >
-                    {activeServices.every(s => selectedServiceIds.includes(s.id)) ? 'Deselect All' : 'Select All'}
+                    <Save className="w-3.5 h-3.5" />
+                    {isSaving ? 'Saving...' : 'Assign & Save'}
                   </button>
-                )}
+                </div>
               </div>
 
               {/* Selection Rule Toast Warning Banner */}
@@ -968,33 +969,24 @@ const ServiceBill: React.FC<ServiceBillProps> = ({ onNavigate }) => {
             </div>
           </div>
 
-          {/* Centered/Wide Sticky Summary & Submit Bar at the Bottom */}
+          {/* Centered/Wide Sticky Summary at the Bottom */}
           {partsBasket.length > 0 && selectedServiceIds.length > 0 && (
-            <div className="card bg-slate-950 text-white border border-slate-800 p-5 shadow-xl relative overflow-hidden animate-fadeIn w-full flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="card bg-slate-950 text-white border border-slate-800 p-4 shadow-xl relative overflow-hidden animate-fadeIn w-full flex items-center justify-between gap-4">
               <div className="absolute -right-8 -top-8 h-24 w-24 bg-primary-600/20 rounded-full blur-xl pointer-events-none" />
               
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-primary-900/40 text-primary-400">
-                  <Sparkles className="w-5 h-5 animate-pulse" />
+                <div className="h-9 w-9 flex items-center justify-center rounded-xl bg-primary-900/40 text-primary-400">
+                  <Sparkles className="w-4.5 h-4.5 animate-pulse" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-sm text-white">
-                    Assign {partsBasket.length} Spares to {selectedServiceIds.length} Vehicle(s)
+                  <h4 className="font-bold text-xs text-white">
+                    Assigning {partsBasket.length} Spares to {selectedServiceIds.length} Vehicle(s)
                   </h4>
-                  <p className="text-xs text-slate-400">
-                    Spares Total: <span className="text-white font-semibold">₹{(basketTotal * (partsBasket.length > 1 ? 1 : selectedServiceIds.length)).toFixed(2)}</span>. Job cards will be held in active workshop status.
+                  <p className="text-[11px] text-slate-400">
+                    Spares Total: <span className="text-white font-semibold">₹{(basketTotal * (partsBasket.length > 1 ? 1 : selectedServiceIds.length)).toFixed(2)}</span>. Please click **Assign & Save** at the top right of the vehicle selector to confirm.
                   </p>
                 </div>
               </div>
-
-              <button
-                onClick={triggerSaveConfirmation}
-                disabled={isSaving}
-                className="btn btn-primary w-full sm:w-auto px-6 py-2.5 font-bold shadow-lg shadow-primary-500/25 flex items-center justify-center gap-2"
-              >
-                <Save className="w-4 h-4" />
-                {isSaving ? 'Processing...' : 'Assign & Save Spares'}
-              </button>
             </div>
           )}
         </div>

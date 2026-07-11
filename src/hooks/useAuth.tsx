@@ -35,7 +35,8 @@ const ALL_PAGES = [
   'reports',
   'templates',
   'online_orders',
-  'settings'
+  'settings',
+  'sale_bike'
 ];
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -76,10 +77,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
     try {
-      const perms = await db.getRolePermissions(user.role);
-      setAllowedPages(perms || []);
+      const userPerms = await db.getUserPermissions(user.username, activeBranchId);
+      if (userPerms && userPerms.length > 0) {
+        setAllowedPages(userPerms);
+        return;
+      }
+      const rolePerms = await db.getRolePermissions(user.role, activeBranchId);
+      setAllowedPages(rolePerms || []);
     } catch (e) {
-      console.error('Failed to load role permissions:', e);
+      console.error('Failed to load role/user permissions:', e);
       // Fallback default employee pages if DB fetch fails
       setAllowedPages(['dashboard', 'billing', 'products', 'customers', 'online_orders', 'barcodes']);
     }
@@ -104,7 +110,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else {
       setBranches([]);
     }
-  }, [currentUser]);
+  }, [currentUser, activeBranchId]);
 
   const login = async (username: string, password: string) => {
     try {
