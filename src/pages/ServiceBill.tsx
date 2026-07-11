@@ -75,7 +75,9 @@ const ServiceBill: React.FC<ServiceBillProps> = () => {
       p.name.toLowerCase().includes(query) ||
       (p.company && p.company.toLowerCase().includes(query)) ||
       (p.barcode && p.barcode.toLowerCase().includes(query)) ||
-      (p.skuCode && p.skuCode.toLowerCase().includes(query))
+      (p.skuCode && p.skuCode.toLowerCase().includes(query)) ||
+      (p.productCode && p.productCode.toLowerCase().includes(query)) ||
+      String(p.id).includes(query)
     );
   });
 

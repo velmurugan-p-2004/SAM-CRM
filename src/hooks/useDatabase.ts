@@ -94,7 +94,7 @@ class BrowserDatabase {
     return await this.getElectronApi().dbCall('getCustomers', branchId);
   }
 
-  async createCustomer(customerData: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>, branchId?: number): Promise<number> {
+  async createCustomer(customerData: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>, branchId?: number | null): Promise<number> {
     return await this.getElectronApi().dbCall('createCustomer', customerData, branchId);
   }
 
@@ -317,7 +317,7 @@ export const useProducts = (branchId?: number) => {
         const savedUser = sessionStorage.getItem('billing_app_current_user');
         if (savedUser) {
           const user = JSON.parse(savedUser);
-          if (user.role === 'super_admin' || user.role === 'admin') {
+          if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'sub_admin') {
             branchToSave = null;
           }
         }
@@ -361,8 +361,13 @@ export const useProducts = (branchId?: number) => {
   };
 
   const getProductByBarcode = (barcode: string): Product | null => {
-    const key = String(barcode || '').trim();
-    return products.find(p => String(p.barcode || '').trim() === key) || null;
+    const key = String(barcode || '').trim().toLowerCase();
+    return products.find(p => 
+      String(p.barcode || '').trim().toLowerCase() === key ||
+      (p.productCode && String(p.productCode).trim().toLowerCase() === key) ||
+      (p.skuCode && String(p.skuCode).trim().toLowerCase() === key) ||
+      String(p.id).trim() === key
+    ) || null;
   };
 
   useEffect(() => {
@@ -503,7 +508,20 @@ export const useCustomers = (branchId?: number) => {
 
   const addCustomer = async (customerData: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
-      const id = await db.createCustomer(customerData, getTargetBranchId());
+      let branchToSave: number | null = getTargetBranchId();
+      try {
+        const savedUser = sessionStorage.getItem('billing_app_current_user');
+        if (savedUser) {
+          const user = JSON.parse(savedUser);
+          if (user.role === 'super_admin' || user.role === 'admin') {
+            branchToSave = null;
+          }
+        }
+      } catch (e) {
+        console.error('Failed to resolve user role for customer branch mapping:', e);
+      }
+
+      const id = await db.createCustomer(customerData, branchToSave);
       await loadCustomers(); // Reload customers
       return id;
     } catch (err) {

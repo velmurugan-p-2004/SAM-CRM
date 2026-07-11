@@ -670,7 +670,10 @@ const Billing: React.FC = () => {
   const filteredProducts = !barcodeInput.trim() ? [] : products.filter(product =>
     product.name.toLowerCase().includes(barcodeInput.toLowerCase()) ||
     product.company.toLowerCase().includes(barcodeInput.toLowerCase()) ||
-    product.barcode.includes(barcodeInput)
+    (product.barcode && product.barcode.toLowerCase().includes(barcodeInput.toLowerCase())) ||
+    (product.productCode && product.productCode.toLowerCase().includes(barcodeInput.toLowerCase())) ||
+    (product.skuCode && product.skuCode.toLowerCase().includes(barcodeInput.toLowerCase())) ||
+    String(product.id).includes(barcodeInput)
   );
 
   const gstInclusive = (() => {

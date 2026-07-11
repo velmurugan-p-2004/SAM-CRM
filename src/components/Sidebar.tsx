@@ -95,6 +95,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, onCl
               className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white outline-none focus:border-primary-500 focus:bg-slate-900 cursor-pointer"
               title="Select Active Branch"
             >
+              <option value="0" className="bg-slate-950 text-white">All Branch Data</option>
               {branches.map(b => (
                 <option key={b.id} value={b.id} className="bg-slate-950 text-white">
                   {b.name}
