@@ -19,13 +19,14 @@ import { useDatabase } from './hooks/useDatabase';
 import { useAuth, AuthProvider } from './hooks/useAuth';
 import { useECommerceIntegration } from './hooks/useECommerceIntegration';
 import Login from './pages/Login';
-import { Database, FileText, FileCode, FolderDown } from 'lucide-react';
+import { Database, FileText, FileCode, FolderDown, Menu } from 'lucide-react';
 
 type Page = 'dashboard' | 'services' | 'service_bill' | 'products' | 'categories' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'parties' | 'reports' | 'templates' | 'settings' | 'online_orders' | 'sale_bike';
 
 function AppContent() {
   const { currentUser, allowedPages } = useAuth();
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const db = useDatabase();
   useECommerceIntegration();
   const [isClosing, setIsClosing] = useState(false);
@@ -154,9 +155,40 @@ function AppContent() {
   };
 
   return (
-    <div className="app-root flex h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-slate-100 to-blue-50 text-slate-900">
-      <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
-      <main className="flex-1 overflow-auto p-4 lg:p-6">
+    <div className="app-root flex flex-col md:flex-row h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-slate-100 to-blue-50 text-slate-900">
+      {/* Mobile Top Header */}
+      <header className="flex items-center justify-between border-b border-white/10 bg-slate-950 px-4 py-3 text-white md:hidden shrink-0">
+        <button
+          onClick={() => setIsSidebarOpen(true)}
+          className="rounded-xl bg-white/10 p-2 text-white hover:bg-white/20 transition-all"
+          title="Open Menu"
+        >
+          <Menu className="h-6 w-6" />
+        </button>
+        <span className="font-semibold uppercase tracking-[0.2em] text-xs text-primary-100">Bill போடு</span>
+        <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary-500/20 text-xs font-bold uppercase border border-primary-500/30 text-primary-200">
+          {currentUser ? currentUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'U'}
+        </div>
+      </header>
+
+      {/* Backdrop overlay for mobile menu */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      <Sidebar 
+        currentPage={currentPage} 
+        onNavigate={(page) => {
+          setCurrentPage(page);
+          setIsSidebarOpen(false);
+        }} 
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+      />
+      <main className="flex-1 overflow-auto p-0 md:p-6 max-w-full">
         {renderPage()}
       </main>
 

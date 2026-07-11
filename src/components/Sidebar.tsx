@@ -14,7 +14,8 @@ import {
   LogOut,
   Wrench,
   FileText,
-  Bike
+  Bike,
+  X
 } from 'lucide-react';
 
 type Page = 'dashboard' | 'services' | 'service_bill' | 'products' | 'categories' | 'barcodes' | 'billing' | 'customers' | 'inventory' | 'parties' | 'reports' | 'templates' | 'settings' | 'online_orders' | 'sale_bike';
@@ -22,6 +23,8 @@ type Page = 'dashboard' | 'services' | 'service_bill' | 'products' | 'categories
 interface SidebarProps {
   currentPage: string;
   onNavigate: (page: Page) => void;
+  isOpen: boolean;
+  onClose: () => void;
 }
 
 const menuItems = [
@@ -41,7 +44,7 @@ const menuItems = [
   { id: 'online_orders', label: 'Online Orders', icon: Package },
 ];
 
-const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, onClose }) => {
   const { currentUser, logout, allowedPages, branches, activeBranchId, setActiveBranchId, isSuperAdmin, isAdmin } = useAuth();
 
   const filteredMenuItems = menuItems.filter(item => {
@@ -63,9 +66,17 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => {
   };
 
   return (
-    <div className="relative flex w-72 flex-col border-r border-white/50 bg-slate-950 text-white shadow-2xl shadow-slate-900/20">
+    <div className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-white/50 bg-slate-950 text-white shadow-2xl transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
       <div className="absolute inset-x-0 top-0 h-44 bg-gradient-to-b from-primary-500/30 to-transparent" />
       <div className="relative p-6 pb-4">
+        {/* Close Button on Mobile */}
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 rounded-xl p-2 text-slate-400 hover:bg-white/10 hover:text-white md:hidden"
+          title="Close Menu"
+        >
+          <X className="h-6 w-6" />
+        </button>
         <div className="inline-flex rounded-2xl bg-white/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-primary-100 backdrop-blur">
           Bill போடு
         </div>

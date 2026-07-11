@@ -682,7 +682,7 @@ const Billing: React.FC = () => {
   })();
 
   return (
-    <div className="min-h-full rounded-[2rem] bg-white/70 p-5 shadow-soft backdrop-blur-sm lg:p-8">
+    <div className="min-h-full rounded-none md:rounded-[2rem] bg-white/70 p-4 md:p-8 shadow-soft backdrop-blur-sm">
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Left Column - Product Selection and Customer */}
         <div className="space-y-6">

@@ -566,7 +566,7 @@ const ServiceBill: React.FC<ServiceBillProps> = () => {
   const basketTotal = partsBasket.reduce((sum, item) => sum + (item.product.finalPrice * item.qty), 0);
 
   return (
-    <div className="relative min-h-full rounded-[2rem] bg-gradient-to-br from-white/90 via-slate-50/50 to-blue-50/30 p-6 shadow-soft backdrop-blur-md lg:p-8">
+    <div className="relative min-h-full rounded-none md:rounded-[2rem] bg-gradient-to-br from-white/90 via-slate-50/50 to-blue-50/30 p-4 md:p-8 shadow-soft backdrop-blur-md">
       
       {/* Toast Notifications */}
       {toast && (

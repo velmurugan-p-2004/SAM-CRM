@@ -19,11 +19,13 @@ class BrowserDatabase {
       return api;
     }
 
-    // Web Browser Fallback: proxy queries to local Express server running on port 3001
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+
+    // Web Browser Fallback: proxy queries to hosted Express server
     return {
       dbCall: async (method: string, ...args: any[]): Promise<any> => {
         try {
-          const response = await fetch('http://localhost:3001/api/db-call', {
+          const response = await fetch(`${backendUrl}/api/db-call`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

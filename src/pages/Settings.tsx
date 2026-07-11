@@ -32,7 +32,7 @@ const Settings: React.FC = () => {
   const [selectedReceiptPrinter, setSelectedReceiptPrinter] = useState<string>(() => localStorage.getItem('receipt_printer_name') || '');
   const [selectedLabelPrinter, setSelectedLabelPrinter] = useState<string>(() => localStorage.getItem('label_printer_name') || '');
 
-  const { isSuperAdmin, isAdmin, currentUser, branches, refreshBranches } = useAuth();
+  const { isSuperAdmin, isAdmin, isSubAdmin, currentUser, branches, refreshBranches } = useAuth();
   const [users, setUsers] = useState<any[]>([]);
   const [userLoading, setUserLoading] = useState(false);
   const [userForm, setUserForm] = useState({
@@ -49,8 +49,10 @@ const Settings: React.FC = () => {
     try {
       setUserLoading(true);
       const list = await db.getUsers();
-      // If we are a normal admin, filter out super_admin and other admins from view, show employee and sub_admin
-      if (!isSuperAdmin && isAdmin) {
+      // Filter list based on role and branch assignment
+      if (isSubAdmin) {
+        setUsers((list || []).filter(u => u.role === 'employee' && u.branchId === currentUser?.branchId));
+      } else if (!isSuperAdmin && isAdmin) {
         setUsers((list || []).filter(u => u.role === 'employee' || u.role === 'sub_admin'));
       } else {
         setUsers(list || []);
@@ -63,17 +65,19 @@ const Settings: React.FC = () => {
   };
 
   useEffect(() => {
-    if (isSuperAdmin || isAdmin) {
+    if (isSuperAdmin || isAdmin || isSubAdmin) {
       loadUsers();
     }
-  }, [isSuperAdmin, isAdmin]);
+  }, [isSuperAdmin, isAdmin, isSubAdmin]);
 
   const handleUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const selectedBranchId = (userForm.role === 'employee' || userForm.role === 'sub_admin')
-        ? (userForm.branchId ? parseInt(userForm.branchId as string) : null)
-        : null;
+      const selectedBranchId = isSubAdmin
+        ? (currentUser?.branchId || null)
+        : ((userForm.role === 'employee' || userForm.role === 'sub_admin')
+          ? (userForm.branchId ? parseInt(userForm.branchId as string) : null)
+          : null);
 
       if (editingUserId) {
         await db.updateUser(editingUserId, {
@@ -120,7 +124,13 @@ const Settings: React.FC = () => {
   };
 
   const resetUserForm = () => {
-    setUserForm({ username: '', password: '', name: '', role: 'employee', branchId: '' });
+    setUserForm({ 
+      username: '', 
+      password: '', 
+      name: '', 
+      role: 'employee', 
+      branchId: isSubAdmin && currentUser?.branchId ? String(currentUser.branchId) : '' 
+    });
     setEditingUserId(null);
     setShowUserForm(false);
   };
@@ -188,13 +198,20 @@ const Settings: React.FC = () => {
     }
   }, [activeBranchId]);
 
-  // Set default user selection when users list loads
+  // Set default user selection when users list or selected branch changes
   useEffect(() => {
-    const permUsers = users.filter(u => u.role === 'employee' || u.role === 'sub_admin');
-    if (permUsers.length > 0 && !selectedConfigUser) {
-      setSelectedConfigUser(permUsers[0].username);
+    const branchUsers = users.filter(u => 
+      (u.role === 'employee' || u.role === 'sub_admin') && 
+      Number(u.branchId) === selectedConfigBranch
+    );
+    
+    // Check if currently selected user is in the active branch list
+    const isCurrentUserValid = branchUsers.some(u => u.username === selectedConfigUser);
+    
+    if (!isCurrentUserValid) {
+      setSelectedConfigUser(branchUsers.length > 0 ? branchUsers[0].username : '');
     }
-  }, [users]);
+  }, [users, selectedConfigBranch, configTargetType]);
 
   const loadPermissionsData = async () => {
     try {
@@ -213,10 +230,10 @@ const Settings: React.FC = () => {
   };
 
   useEffect(() => {
-    if (isSuperAdmin || isAdmin) {
+    if (isSuperAdmin || isAdmin || isSubAdmin) {
       loadPermissionsData();
     }
-  }, [isSuperAdmin, isAdmin, configTargetType, selectedConfigRole, selectedConfigUser, selectedConfigBranch]);
+  }, [isSuperAdmin, isAdmin, isSubAdmin, configTargetType, selectedConfigRole, selectedConfigUser, selectedConfigBranch]);
 
   const handlePagePermissionToggle = (pageId: string) => {
     setRolePages(prev =>
@@ -527,7 +544,7 @@ const Settings: React.FC = () => {
 
 
   return (
-    <div className="min-h-full rounded-[2rem] bg-white/70 p-5 shadow-soft backdrop-blur-sm lg:p-8">
+    <div className="min-h-full rounded-none md:rounded-[2rem] bg-white/70 p-4 md:p-8 shadow-soft backdrop-blur-sm">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-primary-600">Administration</p>
@@ -1004,7 +1021,7 @@ const Settings: React.FC = () => {
           </div>
         )}
 
-        {(isSuperAdmin || isAdmin) && (
+        {(isSuperAdmin || isAdmin || isSubAdmin) && (
           <div className="card border border-white/60 bg-white/85 shadow-soft lg:col-span-2">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
@@ -1069,12 +1086,13 @@ const Settings: React.FC = () => {
                     <label className="block text-sm font-medium text-slate-700 mb-1">Account Role</label>
                     <select
                       value={userForm.role}
+                      disabled={isSubAdmin}
                       onChange={(e) => setUserForm(prev => ({ ...prev, role: e.target.value as any }))}
-                      className="input w-full"
+                      className="input w-full disabled:bg-slate-100 disabled:opacity-75"
                       title="Select Role"
                     >
                       <option value="employee">Employee</option>
-                      <option value="sub_admin">Sub Admin</option>
+                      {!isSubAdmin && <option value="sub_admin">Sub Admin</option>}
                       {isSuperAdmin && (
                         <>
                           <option value="admin">Admin</option>
@@ -1088,9 +1106,10 @@ const Settings: React.FC = () => {
                       <label className="block text-sm font-medium text-slate-700 mb-1">Assign Branch</label>
                       <select
                         required
+                        disabled={isSubAdmin}
                         value={userForm.branchId}
                         onChange={(e) => setUserForm(prev => ({ ...prev, branchId: e.target.value }))}
-                        className="input w-full"
+                        className="input w-full disabled:bg-slate-100 disabled:opacity-75"
                         title="Select Branch"
                       >
                         <option value="">Select Branch...</option>
@@ -1183,7 +1202,7 @@ const Settings: React.FC = () => {
           </div>
         )}
 
-        {(isSuperAdmin || isAdmin) && (
+        {(isSuperAdmin || isAdmin || isSubAdmin) && (
           <div className="card border border-white/60 bg-white/85 shadow-soft lg:col-span-2">
             <div className="flex items-center gap-3 mb-4">
               <Users className="h-6 w-6 text-primary-600" />
@@ -1221,7 +1240,7 @@ const Settings: React.FC = () => {
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-primary-500 cursor-pointer font-bold"
                     >
                       <option value="employee">Employee</option>
-                      <option value="sub_admin">Sub Admin</option>
+                      {!isSubAdmin && <option value="sub_admin">Sub Admin</option>}
                     </select>
                   </>
                 ) : (
@@ -1234,7 +1253,7 @@ const Settings: React.FC = () => {
                     >
                       <option value="">-- Choose User Account --</option>
                       {users
-                        .filter(u => u.role === 'employee' || u.role === 'sub_admin')
+                        .filter(u => (u.role === 'employee' || u.role === 'sub_admin') && Number(u.branchId) === selectedConfigBranch)
                         .map(u => (
                           <option key={u.id} value={u.username}>
                             {u.name} ({u.username} - {u.role === 'employee' ? 'Employee' : 'Sub Admin'})
@@ -1250,8 +1269,9 @@ const Settings: React.FC = () => {
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Select Store Branch</label>
                 <select
                   value={selectedConfigBranch}
+                  disabled={isSubAdmin}
                   onChange={(e) => setSelectedConfigBranch(Number(e.target.value))}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-primary-500 cursor-pointer font-bold"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-primary-500 cursor-pointer font-bold disabled:opacity-75 disabled:bg-slate-100"
                 >
                   {branches.map(b => (
                     <option key={b.id} value={b.id}>

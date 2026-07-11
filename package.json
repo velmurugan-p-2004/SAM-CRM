@@ -77,6 +77,9 @@
     "wait-on": "^8.0.5"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/cli": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
     "@types/electron": "^1.4.38",
     "@types/node": "^24.3.3",
     "@types/qrcode": "^1.5.5",
