@@ -110,6 +110,16 @@ function AppContent() {
     return () => clearInterval(id);
   }, [currentUser]);
 
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreen = (e: Event) => {
+      setIsFullscreen((e as CustomEvent).detail);
+    };
+    window.addEventListener('attendance-fullscreen', handleFullscreen);
+    return () => window.removeEventListener('attendance-fullscreen', handleFullscreen);
+  }, []);
+
   if (!currentUser) {
     return <Login onLoginSuccess={() => {}} />;
   }
@@ -160,22 +170,24 @@ function AppContent() {
   return (
     <div className="app-root flex flex-col md:flex-row h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-slate-100 to-blue-50 text-slate-900">
       {/* Mobile Top Header */}
-      <header className="flex items-center justify-between border-b border-white/10 bg-slate-950 px-4 py-3 text-white md:hidden shrink-0">
-        <button
-          onClick={() => setIsSidebarOpen(true)}
-          className="rounded-xl bg-white/10 p-2 text-white hover:bg-white/20 transition-all"
-          title="Open Menu"
-        >
-          <Menu className="h-6 w-6" />
-        </button>
-        <span className="font-semibold uppercase tracking-[0.2em] text-xs text-primary-100">Bill போடு</span>
-        <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary-500/20 text-xs font-bold uppercase border border-primary-500/30 text-primary-200">
-          {currentUser ? currentUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'U'}
-        </div>
-      </header>
+      {!isFullscreen && (
+        <header className="flex items-center justify-between border-b border-white/10 bg-slate-950 px-4 py-3 text-white md:hidden shrink-0">
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="rounded-xl bg-white/10 p-2 text-white hover:bg-white/20 transition-all"
+            title="Open Menu"
+          >
+            <Menu className="h-6 w-6" />
+          </button>
+          <span className="font-semibold uppercase tracking-[0.2em] text-xs text-primary-100">Bill போடு</span>
+          <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary-500/20 text-xs font-bold uppercase border border-primary-500/30 text-primary-200">
+            {currentUser ? currentUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'U'}
+          </div>
+        </header>
+      )}
 
       {/* Backdrop overlay for mobile menu */}
-      {isSidebarOpen && (
+      {isSidebarOpen && !isFullscreen && (
         <div
           className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
           onClick={() => setIsSidebarOpen(false)}
@@ -191,7 +203,7 @@ function AppContent() {
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
       />
-      <main className="flex-1 overflow-auto p-0 md:p-6 max-w-full">
+      <main className={`flex-1 overflow-auto max-w-full ${isFullscreen ? 'p-0' : 'p-0 md:p-6'}`}>
         {renderPage()}
       </main>
 

@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import {
   Home,
@@ -49,6 +50,17 @@ const menuItems = [
 
 const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, onClose }) => {
   const { currentUser, logout, allowedPages, branches, activeBranchId, setActiveBranchId, isSuperAdmin, isAdmin } = useAuth();
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreen = (e: Event) => {
+      setIsFullscreen((e as CustomEvent).detail);
+    };
+    window.addEventListener('attendance-fullscreen', handleFullscreen);
+    return () => window.removeEventListener('attendance-fullscreen', handleFullscreen);
+  }, []);
+
+  if (isFullscreen) return null;
 
   const filteredMenuItems = menuItems.filter(item => {
     return allowedPages.includes(item.id);

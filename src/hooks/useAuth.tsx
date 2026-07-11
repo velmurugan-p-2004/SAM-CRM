@@ -37,7 +37,8 @@ const ALL_PAGES = [
   'online_orders',
   'settings',
   'sale_bike',
-  'attendance'
+  'attendance',
+  'attendance_modify'
 ];
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

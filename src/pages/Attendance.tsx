@@ -17,20 +17,25 @@ import {
   Check,
   AlertCircle,
   FileText,
-  CalendarRange
+  CalendarRange,
+  QrCode,
+  Key,
+  Lock,
+  ArrowLeft
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import { useDatabase } from '../hooks/useDatabase';
 import { useAuth } from '../hooks/useAuth';
 import { AttendanceRecord, AttendanceRules, Holiday, LeavePermissionRequest } from '../types';
 
 export default function Attendance() {
   const db = useDatabase();
-  const { currentUser, isSuperAdmin, isAdmin, isSubAdmin, activeBranchId } = useAuth();
+  const { currentUser, isSuperAdmin, isAdmin, isSubAdmin, activeBranchId, allowedPages } = useAuth();
   
   // Decide active tab based on role
   const isManager = isSuperAdmin || isAdmin || isSubAdmin;
 
-  const [activeTab, setActiveTab] = useState<'clock' | 'daily' | 'monthly' | 'rules' | 'requests' | 'holidays' | 'my-requests'>(
+  const [activeTab, setActiveTab] = useState<'clock' | 'daily' | 'monthly' | 'rules' | 'requests' | 'holidays' | 'my-requests' | 'generator'>(
     isManager ? 'daily' : 'clock'
   );
 
@@ -57,10 +62,30 @@ export default function Attendance() {
     if (isSuperAdmin) return true;
     if (isAdmin) return targetRole !== 'super_admin';
     if (isSubAdmin) {
-      return !!rules.allowSubadminModify && targetRole !== 'admin' && targetRole !== 'super_admin';
+      return allowedPages.includes('attendance_modify') && targetRole !== 'admin' && targetRole !== 'super_admin';
     }
     return false;
   };
+
+  // OTP / QR Code States
+  const [managerPassword, setManagerPassword] = useState('');
+  const [generatorAuthenticated, setGeneratorAuthenticated] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [generatorMode, setGeneratorMode] = useState<'otp' | 'qr'>('otp');
+  const [timeLeft, setTimeLeft] = useState(30);
+  const [currentOtp, setCurrentOtp] = useState('');
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
+
+  // Verification modal states for employee
+  const [verificationPendingAction, setVerificationPendingAction] = useState<'in' | 'out' | null>(null);
+  const [verificationMethod, setVerificationMethod] = useState<'otp' | 'qr' | null>(null);
+  const [verificationInput, setVerificationInput] = useState('');
+  const [verificationError, setVerificationError] = useState('');
+
+  // Exit generator fullscreen authentication states
+  const [showExitGeneratorAuth, setShowExitGeneratorAuth] = useState(false);
+  const [exitPassword, setExitPassword] = useState('');
+  const [exitError, setExitError] = useState('');
 
   // Admin View States
   const [dailyRecords, setDailyRecords] = useState<AttendanceRecord[]>([]);
@@ -401,6 +426,7 @@ export default function Attendance() {
       loadMonthlyReport();
     } else if (activeTab === 'clock') {
       loadEmployeeHistory();
+      loadHolidays();
     } else if (activeTab === 'requests') {
       loadLeaveRequests();
     } else if (activeTab === 'holidays') {
@@ -411,8 +437,125 @@ export default function Attendance() {
   }, [activeTab, selectedDate, selectedMonth, selectedYear, activeBranchId, currentUser]);
 
 
-  // Handle Employee Check-In
-  const handleCheckIn = async () => {
+  // OTP calculation based on time chunk and branchId (changes every 30 seconds)
+  const generateOTP = (timestampChunk: number, branchId: number) => {
+    const secretSeed = 18923 + (branchId * 997);
+    const hash = (timestampChunk * 31337 + secretSeed) % 1000000;
+    return String(hash).padStart(6, '0');
+  };
+
+  const handleVerifyManagerPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    if (!currentUser) return;
+    try {
+      setSaving(true);
+      await db.login(currentUser.username, managerPassword);
+      setGeneratorAuthenticated(true);
+      setManagerPassword('');
+    } catch (err: any) {
+      setAuthError('Incorrect password. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleExitGeneratorSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setExitError('');
+    if (!currentUser) return;
+    try {
+      setSaving(true);
+      await db.login(currentUser.username, exitPassword);
+      setGeneratorAuthenticated(false);
+      setShowExitGeneratorAuth(false);
+      setExitPassword('');
+      // Set activeTab back to normal daily sheet or My Clock
+      setActiveTab(isManager ? 'daily' : 'clock');
+    } catch (err: any) {
+      setExitError('Incorrect password. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    const isFullscreenActive = activeTab === 'generator' && generatorAuthenticated;
+    window.dispatchEvent(new CustomEvent('attendance-fullscreen', { detail: isFullscreenActive }));
+    
+    return () => {
+      window.dispatchEvent(new CustomEvent('attendance-fullscreen', { detail: false }));
+    };
+  }, [activeTab, generatorAuthenticated]);
+
+  useEffect(() => {
+    if (activeTab === 'generator' && generatorAuthenticated) {
+      const updateCodes = async () => {
+        const timestampChunk = Math.floor(Date.now() / 30000);
+        const otp = generateOTP(timestampChunk, activeBranchId || 1);
+        setCurrentOtp(otp);
+
+        const qrText = `BILL_PODU_ATTENDANCE_${otp}`;
+        try {
+          const dataUrl = await QRCode.toDataURL(qrText, { width: 256, margin: 2 });
+          setQrCodeDataUrl(dataUrl);
+        } catch (err) {
+          console.error('Failed to generate QR code:', err);
+        }
+      };
+
+      updateCodes();
+      setTimeLeft(30);
+      const interval = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            updateCodes();
+            return 30;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [activeTab, generatorAuthenticated]);
+
+  const handleVerifyAndSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setVerificationError('');
+
+    let otp = '';
+    if (verificationMethod === 'otp') {
+      otp = verificationInput;
+    } else {
+      if (verificationInput.startsWith('BILL_PODU_ATTENDANCE_')) {
+        otp = verificationInput.replace('BILL_PODU_ATTENDANCE_', '');
+      } else {
+        setVerificationError('Invalid QR Code token.');
+        return;
+      }
+    }
+
+    const nowChunk = Math.floor(Date.now() / 30000);
+    const branchId = currentUser?.branchId || activeBranchId || 1;
+    const validOTP1 = generateOTP(nowChunk, branchId);
+    const validOTP2 = generateOTP(nowChunk - 1, branchId);
+
+    if (otp === validOTP1 || otp === validOTP2) {
+      const action = verificationPendingAction;
+      setVerificationPendingAction(null);
+      if (action === 'in') {
+        await handleCheckInAction();
+      } else if (action === 'out') {
+        await handleCheckOutAction();
+      }
+    } else {
+      setVerificationError('Verification failed. Invalid or expired token.');
+    }
+  };
+
+  // Handle Employee Check-In Action
+  const handleCheckInAction = async () => {
     if (!currentUser) return;
     try {
       setSaving(true);
@@ -451,8 +594,8 @@ export default function Attendance() {
     }
   };
 
-  // Handle Employee Check-Out
-  const handleCheckOut = async () => {
+  // Handle Employee Check-Out Action
+  const handleCheckOutAction = async () => {
     if (!currentUser || !todayRecord) return;
     try {
       setSaving(true);
@@ -473,6 +616,20 @@ export default function Attendance() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleCheckIn = async () => {
+    setVerificationPendingAction('in');
+    setVerificationMethod(null);
+    setVerificationInput('');
+    setVerificationError('');
+  };
+
+  const handleCheckOut = async () => {
+    setVerificationPendingAction('out');
+    setVerificationMethod(null);
+    setVerificationInput('');
+    setVerificationError('');
   };
 
   // Admin: Save or update individual record from Daily Sheet
@@ -828,6 +985,17 @@ export default function Attendance() {
               >
                 <CalendarRange className="w-4 h-4" /> Holidays
               </button>
+              <button
+                onClick={() => {
+                  setGeneratorAuthenticated(false);
+                  setActiveTab('generator');
+                }}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-all duration-200 ${
+                  activeTab === 'generator' ? 'bg-white text-slate-900 shadow-md shadow-slate-200' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <QrCode className="w-4 h-4" /> OTP/QR Generator
+              </button>
               {(isSuperAdmin || isAdmin) && (
                 <button
                   onClick={() => setActiveTab('rules')}
@@ -855,12 +1023,75 @@ export default function Attendance() {
               <span className="text-xs uppercase tracking-widest text-slate-400 font-bold mb-1">Today's Date</span>
               <span className="text-sm font-semibold text-slate-600 mb-8">{liveTime.toLocaleDateString('default', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
               
-              {/* Dynamic Digital Clock */}
-              <div className="relative flex items-center justify-center w-56 h-56 rounded-full bg-slate-950 text-white border-4 border-primary-500/20 shadow-xl mb-8">
-                <div className="absolute inset-2 rounded-full border border-white/5 animate-pulse" />
+              {/* Modern Animated Live Clock */}
+              <div className="relative flex items-center justify-center w-56 h-56 rounded-full bg-slate-50/50 border border-slate-100 shadow-soft mb-8">
+                {/* SVG seconds circular track */}
+                <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 220 220">
+                  <defs>
+                    <linearGradient id="clockGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#3b82f6" />
+                      <stop offset="50%" stopColor="#6366f1" />
+                      <stop offset="100%" stopColor="#ec4899" />
+                    </linearGradient>
+                  </defs>
+                  {/* Background Track */}
+                  <circle
+                    cx="110"
+                    cy="110"
+                    r="98"
+                    className="stroke-slate-100 fill-none"
+                    strokeWidth="4"
+                  />
+                  {/* Glowing Active Track */}
+                  <circle
+                    cx="110"
+                    cy="110"
+                    r="98"
+                    className="fill-none transition-[stroke-dashoffset] duration-300"
+                    stroke="url(#clockGradient)"
+                    strokeWidth="5"
+                    strokeDasharray="615.75"
+                    strokeDashoffset={615.75 - (liveTime.getSeconds() / 60) * 615.75}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                
+                {/* Clock Inner Content */}
                 <div className="flex flex-col items-center justify-center z-10">
-                  <span className="text-3xl font-extrabold tracking-tight">{liveTime.toLocaleTimeString()}</span>
-                  <span className="text-[10px] uppercase font-bold tracking-widest text-primary-400 mt-1">Live Clock</span>
+                  <div className="flex items-center justify-center">
+                    {/* Hours */}
+                    <div className="flex h-10 overflow-hidden items-center justify-center">
+                      {String(liveTime.getHours() % 12 || 12).padStart(2, '0').split('').map((char, idx) => (
+                        <span key={`h-${idx}-${char}`} className="clock-digit text-3xl font-black tracking-tight text-slate-800">
+                          {char}
+                        </span>
+                      ))}
+                    </div>
+
+                    <span className="text-2xl font-black text-slate-400 mx-0.5 animate-pulse">:</span>
+
+                    {/* Minutes */}
+                    <div className="flex h-10 overflow-hidden items-center justify-center">
+                      {String(liveTime.getMinutes()).padStart(2, '0').split('').map((char, idx) => (
+                        <span key={`m-${idx}-${char}`} className="clock-digit text-3xl font-black tracking-tight text-slate-800">
+                          {char}
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Seconds */}
+                    <div className="flex h-6 overflow-hidden items-center justify-center self-end mb-0.5 ml-1">
+                      <span className="text-xs font-bold text-slate-400 mr-0.5">:</span>
+                      {String(liveTime.getSeconds()).padStart(2, '0').split('').map((char, idx) => (
+                        <span key={`s-${idx}-${char}`} className="clock-digit text-xs font-bold text-slate-400">
+                          {char}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <span className="mt-2 text-[9px] font-bold uppercase tracking-widest text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full border border-primary-100/50">
+                    {liveTime.getHours() >= 12 ? 'PM' : 'AM'}
+                  </span>
                 </div>
               </div>
 
@@ -932,7 +1163,7 @@ export default function Attendance() {
             <div className="lg:col-span-2 space-y-6">
               
               {/* Personal stats cards */}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                 <div className="card border border-white/60 bg-white/85 shadow-soft p-4">
                   <span className="text-xs font-medium text-slate-400 block">Days Present</span>
                   <span className="text-2xl font-bold text-slate-800 mt-1">
@@ -946,9 +1177,28 @@ export default function Attendance() {
                   </span>
                 </div>
                 <div className="card border border-white/60 bg-white/85 shadow-soft p-4">
-                  <span className="text-xs font-medium text-slate-400 block">Leaves / Absences</span>
+                  <span className="text-xs font-medium text-slate-400 block">Leaves Taken</span>
                   <span className="text-2xl font-bold text-slate-800 mt-1">
-                    {employeeHistory.filter(r => r.status === 'leave' || r.status === 'absent').length}
+                    {employeeHistory.filter(r => r.status === 'leave').length}
+                  </span>
+                </div>
+                <div className="card border border-white/60 bg-white/85 shadow-soft p-4">
+                  <span className="text-xs font-medium text-slate-400 block">Absent Days</span>
+                  <span className="text-2xl font-bold text-slate-800 mt-1">
+                    {employeeHistory.filter(r => r.status === 'absent').length}
+                  </span>
+                </div>
+                <div className="card border border-white/60 bg-white/85 shadow-soft p-4">
+                  <span className="text-xs font-medium text-slate-400 block">Holidays</span>
+                  <span className="text-2xl font-bold text-slate-800 mt-1">
+                    {(() => {
+                      const now = new Date();
+                      return holidays.filter((h) => {
+                        if (!h.date) return false;
+                        const [hYear, hMonth] = h.date.split('-').map(Number);
+                        return hYear === now.getFullYear() && hMonth === (now.getMonth() + 1);
+                      }).length;
+                    })()}
                   </span>
                 </div>
               </div>
@@ -974,25 +1224,36 @@ export default function Attendance() {
                     const dayNum = idx + 1;
                     const dateStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
                     const record = employeeHistory.find(r => r.date === dateStr);
+                    const isHoliday = holidays.some(h => h.date === dateStr);
+                    const holidayObj = holidays.find(h => h.date === dateStr);
                     
                     return (
                       <div 
                         key={`day-${dayNum}`}
                         className={`h-12 rounded-xl flex flex-col items-center justify-center border transition-all ${
+                          isHoliday ? 'holiday-gold' :
                           record?.status === 'present' ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-bold' :
                           record?.status === 'half_day' ? 'bg-amber-50 border-amber-200 text-amber-800 font-bold' :
                           record?.status === 'leave' ? 'bg-purple-50 border-purple-200 text-purple-800 font-bold' :
                           record?.status === 'absent' ? 'bg-rose-50 border-rose-200 text-rose-800 font-bold' :
                           'bg-slate-50/50 border-slate-100 text-slate-400'
                         }`}
-                        title={record ? `In: ${record.checkInTime || '--:--'}, Out: ${record.checkOutTime || '--:--'}. Note: ${record.notes || 'None'}` : 'No Record'}
+                        title={
+                          isHoliday ? `Holiday: ${holidayObj?.name || 'Assigned Holiday'}` :
+                          record ? `In: ${record.checkInTime || '--:--'}, Out: ${record.checkOutTime || '--:--'}. Note: ${record.notes || 'None'}` : 
+                          'No Record'
+                        }
                       >
                         <span className="text-xs">{dayNum}</span>
-                        {record && (
+                        {isHoliday ? (
+                          <span className="text-[8px] uppercase tracking-tighter mt-0.5 font-bold">
+                            H
+                          </span>
+                        ) : record ? (
                           <span className="text-[8px] uppercase tracking-tighter mt-0.5">
                             {record.status === 'present' ? 'P' : record.status === 'half_day' ? 'HD' : record.status === 'leave' ? 'L' : 'A'}
                           </span>
-                        )}
+                        ) : null}
                       </div>
                     );
                   })}
@@ -1336,22 +1597,6 @@ export default function Attendance() {
                 </button>
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100 mt-2">
-                <div>
-                  <label className="text-sm font-semibold text-slate-900">Allow Sub-Admins to Edit Attendance Logs</label>
-                  <p className="text-xs text-slate-500">Toggle whether Sub-Admins have permission to modify daily and monthly logs for others.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setRules({ ...rules, allowSubadminModify: !rules.allowSubadminModify })}
-                  style={{ backgroundColor: rules.allowSubadminModify ? 'var(--primary)' : '#cbd5e1' }}
-                  className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${rules.allowSubadminModify ? 'translate-x-6' : 'translate-x-1'}`}
-                  />
-                </button>
-              </div>
 
               <button
                 type="submit"
@@ -1795,7 +2040,303 @@ export default function Attendance() {
             </div>
           </div>
         )}
+
+        {/* Tab 8: OTP / QR Generator (Managers only) */}
+        {activeTab === 'generator' && isManager && (
+          <div className="max-w-2xl mx-auto card border border-white/60 bg-white/85 shadow-soft p-6 min-h-[400px] flex flex-col justify-center">
+            {!generatorAuthenticated ? (
+              <form onSubmit={handleVerifyManagerPassword} className="space-y-6 max-w-sm mx-auto text-center py-8">
+                <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center text-slate-800 mx-auto border border-slate-200">
+                  <Lock className="w-8 h-8" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Manager Authentication</h2>
+                  <p className="text-xs text-slate-500 mt-1">Enter your password to view the attendance verification tools.</p>
+                </div>
+                {authError && (
+                  <div className="p-3 rounded-2xl bg-rose-50 border border-rose-100 text-xs font-semibold text-rose-600">
+                    {authError}
+                  </div>
+                )}
+                <div>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Enter password..."
+                    value={managerPassword}
+                    onChange={(e) => setManagerPassword(e.target.value)}
+                    className="input w-full text-center"
+                    autoFocus
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="btn-primary w-full py-3 rounded-2xl font-bold"
+                >
+                  Verify Password
+                </button>
+              </form>
+            ) : (
+              <div className="fixed inset-0 z-[120] bg-slate-950 text-white flex flex-col items-center justify-center p-6 animate-fadeIn">
+                {/* Exit authentication dialog */}
+                {showExitGeneratorAuth && (
+                  <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-[130] p-4 text-slate-900">
+                    <div className="bg-white rounded-3xl p-6 w-full max-w-sm text-center relative shadow-2xl border border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowExitGeneratorAuth(false);
+                          setExitPassword('');
+                          setExitError('');
+                        }}
+                        className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 rounded-xl p-1.5 hover:bg-slate-50 transition-colors"
+                      >
+                        <X className="w-5 h-5 animate-none" />
+                      </button>
+                      
+                      <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center text-rose-600 mx-auto mb-4 border border-rose-100">
+                        <Lock className="w-6 h-6" />
+                      </div>
+                      
+                      <h3 className="text-lg font-bold text-slate-900 mb-1">Exit Generator Session</h3>
+                      <p className="text-xs text-slate-550 mb-6 font-medium">Enter your password to close the active session.</p>
+                      
+                      {exitError && (
+                        <div className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-100 text-xs font-semibold text-rose-600">
+                          {exitError}
+                        </div>
+                      )}
+                      
+                      <form onSubmit={handleExitGeneratorSession} className="space-y-4">
+                        <input
+                          type="password"
+                          required
+                          placeholder="Enter password..."
+                          value={exitPassword}
+                          onChange={(e) => setExitPassword(e.target.value)}
+                          className="input w-full text-center"
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowExitGeneratorAuth(false);
+                              setExitPassword('');
+                              setExitError('');
+                            }}
+                            className="btn-secondary flex-1 py-3 rounded-2xl font-bold"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={saving}
+                            className="bg-rose-600 hover:bg-rose-700 text-white flex-1 py-3 rounded-2xl font-bold transition-all shadow-lg shadow-rose-200"
+                          >
+                            Confirm Exit
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+
+                {/* Back arrow button in top left */}
+                <div className="absolute top-8 left-8">
+                  <button
+                    onClick={() => {
+                      setShowExitGeneratorAuth(true);
+                      setExitError('');
+                    }}
+                    className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors bg-white/5 border border-white/10 p-3 rounded-2xl shadow hover:bg-white/10"
+                    title="Exit Fullscreen Session"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                    <span className="text-sm font-semibold">Exit Session</span>
+                  </button>
+                </div>
+
+                {/* Content of the generator */}
+                <div className="text-center space-y-8 py-4 flex flex-col items-center max-w-lg">
+                  <div>
+                    <h2 className="text-2xl font-extrabold tracking-tight text-white">Attendance Verification Screen</h2>
+                    <p className="text-xs text-slate-400 mt-1">Keep this screen open for employees checking in/out.</p>
+                  </div>
+
+                  <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1 w-fit">
+                    <button
+                      onClick={() => setGeneratorMode('otp')}
+                      className={`flex items-center gap-2 px-5 py-2.5 text-xs font-semibold rounded-xl transition-all duration-200 ${
+                        generatorMode === 'otp' ? 'bg-white text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Key className="w-3.5 h-3.5" /> OTP Code
+                    </button>
+                    <button
+                      onClick={() => setGeneratorMode('qr')}
+                      className={`flex items-center gap-2 px-5 py-2.5 text-xs font-semibold rounded-xl transition-all duration-200 ${
+                        generatorMode === 'qr' ? 'bg-white text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <QrCode className="w-3.5 h-3.5" /> QR Code
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col items-center justify-center min-h-[260px] w-full">
+                    {generatorMode === 'otp' ? (
+                      <div className="space-y-4">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block">Current Active OTP</span>
+                        <div className="flex justify-center gap-3">
+                          {currentOtp.split('').map((char, index) => (
+                            <div key={index} className="w-14 h-20 rounded-2xl border-2 border-slate-800 bg-slate-900 flex items-center justify-center text-4xl font-black text-white shadow-xl">
+                              {char}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block">Scan Current QR Code</span>
+                        {qrCodeDataUrl ? (
+                          <div className="p-4 bg-white border border-slate-850 rounded-3xl shadow-2xl">
+                            <img src={qrCodeDataUrl} alt="Attendance QR Code" className="w-56 h-56 object-contain" />
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-500">Generating QR code...</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
+                      <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse" />
+                      Regenerating in <span className="font-bold text-white">{timeLeft}</span> seconds
+                    </div>
+                    <div className="w-56 bg-slate-800 h-2 rounded-full overflow-hidden border border-white/5">
+                      <div
+                        className="bg-emerald-500 h-full transition-all duration-1000 ease-linear"
+                        style={{ width: `${(timeLeft / 30) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Employee Attendance OTP/QR Verification Modal */}
+      {verificationPendingAction && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md border border-slate-100 shadow-2xl relative">
+            <button
+              onClick={() => setVerificationPendingAction(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 rounded-xl p-1.5 hover:bg-slate-50 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Verification Required</h3>
+            <p className="text-xs text-slate-500 mb-6">
+              Please enter the active OTP or scan the QR Code displayed on the manager's screen to complete your check-{verificationPendingAction}.
+            </p>
+
+            {verificationError && (
+              <div className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-100 text-xs font-semibold text-rose-600">
+                {verificationError}
+              </div>
+            )}
+
+            {!verificationMethod ? (
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  onClick={() => {
+                    setVerificationMethod('otp');
+                    setVerificationInput('');
+                    setVerificationError('');
+                  }}
+                  className="flex flex-col items-center justify-center gap-3 p-6 rounded-3xl border border-slate-200 hover:border-primary-500 hover:bg-primary-50/20 transition-all cursor-pointer group"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-700 group-hover:bg-primary-500 group-hover:text-white transition-all">
+                    <Key className="w-6 h-6" />
+                  </div>
+                  <span className="text-sm font-bold text-slate-800">Enter OTP</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setVerificationMethod('qr');
+                    setVerificationInput('');
+                    setVerificationError('');
+                  }}
+                  className="flex flex-col items-center justify-center gap-3 p-6 rounded-3xl border border-slate-200 hover:border-primary-500 hover:bg-primary-50/20 transition-all cursor-pointer group"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-700 group-hover:bg-primary-500 group-hover:text-white transition-all">
+                    <QrCode className="w-6 h-6" />
+                  </div>
+                  <span className="text-sm font-bold text-slate-800">Scan QR Code</span>
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleVerifyAndSubmit} className="space-y-4">
+                {verificationMethod === 'otp' ? (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Enter 6-Digit OTP</label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      pattern="\d{6}"
+                      required
+                      autoFocus
+                      placeholder="e.g. 123456"
+                      value={verificationInput}
+                      onChange={(e) => setVerificationInput(e.target.value.replace(/\D/g, ''))}
+                      className="input w-full text-center text-2xl font-bold tracking-widest py-3"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Scan QR Code Token</label>
+                    <input
+                      type="password"
+                      required
+                      autoFocus
+                      placeholder="Scan or paste QR code token here..."
+                      value={verificationInput}
+                      onChange={(e) => setVerificationInput(e.target.value)}
+                      className="input w-full text-center py-3 text-sm"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-2 text-center">
+                      Ensure your QR scanner cursor is focused inside this box.
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setVerificationMethod(null)}
+                    className="btn-secondary flex-1 py-3 rounded-2xl font-bold"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="btn-primary flex-1 py-3 rounded-2xl font-bold"
+                  >
+                    Verify & Submit
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Grid cell details & quick edit popup MODAL */}
       {activeCellDetail && (
